@@ -39,3 +39,18 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+## Cloud Data Rebuild
+
+From a fresh cloud clone, rebuild raw data, interim Parquet files, grouped
+features, feature map, graphs, graph embeddings, and diagnostics with:
+
+```bash
+KAGGLE_USERNAME=... KAGGLE_KEY=... scripts/run_cloud_data_pipeline.sh
+```
+
+For a quick check before the full run:
+
+```bash
+PIPELINE_MODE=smoke KAGGLE_USERNAME=... KAGGLE_KEY=... scripts/run_cloud_data_pipeline.sh
+```
