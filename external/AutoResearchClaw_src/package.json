@@ -1,0 +1,16 @@
+{
+  "name": "autoresearchclaw_src",
+  "version": "1.0.0",
+  "description": "<p align=\"center\">   <img src=\"image/logo.png\" width=\"700\" alt=\"AutoResearchClaw Logo\"> </p>",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "acpx": "^0.7.0"
+  }
+}

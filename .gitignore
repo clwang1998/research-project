@@ -1,0 +1,39 @@
+# macOS / editor noise
+.DS_Store
+.vscode/
+.idea/
+
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Environment files and local credentials
+.env
+.env.*
+*.pem
+*.key
+*cookies*.txt
+
+# Large local data and generated artifacts
+data/raw/
+data/interim/
+data/processed/
+!data/README.md
+output/
+dist/
+tmp/
+
+# Generated logs and notebooks checkpoints
+*.log
+.ipynb_checkpoints/
+
+# Local AutoResearchClaw configs; keep only the public example.
+external/AutoResearchClaw_src/config*.yaml
+!external/AutoResearchClaw_src/config.researchclaw.example.yaml
+external/AutoResearchClaw_src/.env*
