@@ -22,6 +22,9 @@ Kept local and excluded from Git:
 
 This keeps the cloud repository small and avoids publishing credentials or large generated artifacts. Use Git for code/document sync, and use object storage, Git LFS, or the existing cloud bundle scripts for large datasets/results when needed.
 
+The canonical raw CSVs are also stored as split archive chunks under
+`data/raw_bundle/` so a cloud clone can rebuild features without Kaggle.
+
 ## Basic Workflow
 
 ```bash
@@ -46,11 +49,11 @@ From a fresh cloud clone, rebuild raw data, interim Parquet files, grouped
 features, feature map, graphs, graph embeddings, and diagnostics with:
 
 ```bash
-KAGGLE_USERNAME=... KAGGLE_KEY=... scripts/run_cloud_data_pipeline.sh
+scripts/run_cloud_data_pipeline.sh
 ```
 
 For a quick check before the full run:
 
 ```bash
-PIPELINE_MODE=smoke KAGGLE_USERNAME=... KAGGLE_KEY=... scripts/run_cloud_data_pipeline.sh
+PIPELINE_MODE=smoke scripts/run_cloud_data_pipeline.sh
 ```

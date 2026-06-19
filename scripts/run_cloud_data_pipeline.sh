@@ -7,21 +7,23 @@ Run the cloud data + feature pipeline from a fresh Git checkout.
 
 Default behavior:
   1. create/use .venv and install Python dependencies
-  2. ensure raw Kaggle S&P 500 CSVs exist under data/raw/
+  2. import raw CSVs from the repository split bundle, or use existing data/raw CSVs
   3. build typed interim Parquet files
   4. build grouped feature Parquet files
   5. build feature_columns_by_group.csv
   6. build graph edges, graph embeddings, and diagnostics
 
 Typical cloud run:
-  KAGGLE_USERNAME=... KAGGLE_KEY=... scripts/run_cloud_data_pipeline.sh
+  scripts/run_cloud_data_pipeline.sh
 
 Smoke test:
-  PIPELINE_MODE=smoke KAGGLE_USERNAME=... KAGGLE_KEY=... scripts/run_cloud_data_pipeline.sh
+  PIPELINE_MODE=smoke scripts/run_cloud_data_pipeline.sh
 
 Useful environment variables:
   PIPELINE_MODE=full|smoke          default: full
-  RAW_SOURCE=auto|existing|kaggle   default: auto
+  RAW_SOURCE=auto|repo_bundle|existing|kaggle
+  RAW_BUNDLE_DIR=data/raw_bundle
+  RAW_BUNDLE_NAME=research_project_raw_data.tar.gz
   KAGGLE_DATASET=andrewmvd/sp-500-stocks
   RUN_SETUP=1|0                    create .venv and pip install requirements
   RUN_GRAPHS=1|0
@@ -52,6 +54,9 @@ RUN_SETUP="${RUN_SETUP:-1}"
 PIPELINE_MODE="${PIPELINE_MODE:-full}"
 RAW_SOURCE="${RAW_SOURCE:-auto}"
 RAW_DIR="${RAW_DIR:-data/raw}"
+RAW_BUNDLE_DIR="${RAW_BUNDLE_DIR:-data/raw_bundle}"
+RAW_BUNDLE_NAME="${RAW_BUNDLE_NAME:-research_project_raw_data.tar.gz}"
+RAW_BUNDLE_ASSEMBLED="${RAW_BUNDLE_ASSEMBLED:-tmp/raw_bundle/$RAW_BUNDLE_NAME}"
 KAGGLE_DATASET="${KAGGLE_DATASET:-andrewmvd/sp-500-stocks}"
 FORCE_DOWNLOAD="${FORCE_DOWNLOAD:-0}"
 
@@ -170,6 +175,54 @@ PY
   fi
 }
 
+hash_file_sha256() {
+  "$PYTHON_CMD" - "$1" <<'PY'
+import hashlib
+import sys
+
+path = sys.argv[1]
+h = hashlib.sha256()
+with open(path, "rb") as f:
+    for chunk in iter(lambda: f.read(1024 * 1024), b""):
+        h.update(chunk)
+print(h.hexdigest())
+PY
+}
+
+import_raw_from_repo_bundle() {
+  local part_prefix="$RAW_BUNDLE_DIR/$RAW_BUNDLE_NAME.part-"
+  local sha_file="$RAW_BUNDLE_DIR/$RAW_BUNDLE_NAME.sha256"
+  local parts=()
+
+  shopt -s nullglob
+  parts=("$part_prefix"*)
+  shopt -u nullglob
+
+  if [[ "${#parts[@]}" -eq 0 ]]; then
+    echo "No raw bundle chunks found at ${part_prefix}*" >&2
+    echo "Run scripts/package_raw_data_bundle.sh locally and push data/raw_bundle/." >&2
+    exit 2
+  fi
+
+  mkdir -p "$(dirname "$RAW_BUNDLE_ASSEMBLED")"
+  cat "${parts[@]}" > "$RAW_BUNDLE_ASSEMBLED"
+
+  if [[ -f "$sha_file" ]]; then
+    local expected
+    local actual
+    expected="$(awk '{print $1}' "$sha_file")"
+    actual="$(hash_file_sha256 "$RAW_BUNDLE_ASSEMBLED")"
+    if [[ "$actual" != "$expected" ]]; then
+      echo "Raw bundle checksum mismatch." >&2
+      echo "expected: $expected" >&2
+      echo "actual:   $actual" >&2
+      exit 2
+    fi
+  fi
+
+  run_step unpack_repo_raw_bundle tar -xzf "$RAW_BUNDLE_ASSEMBLED" -C "$PROJECT_ROOT"
+}
+
 ensure_kaggle_auth() {
   if [[ -n "${KAGGLE_JSON:-}" ]]; then
     mkdir -p "$HOME/.kaggle"
@@ -234,19 +287,28 @@ ensure_raw_data() {
   if [[ "$RAW_SOURCE" == "auto" ]]; then
     if [[ -f "$STOCKS_CSV" && -f "$COMPANIES_CSV" && "$FORCE_DOWNLOAD" != "1" ]]; then
       RAW_SOURCE="existing"
+    elif compgen -G "$RAW_BUNDLE_DIR/$RAW_BUNDLE_NAME.part-*" > /dev/null; then
+      RAW_SOURCE="repo_bundle"
     else
-      RAW_SOURCE="kaggle"
+      echo "Raw data not found." >&2
+      echo "Expected CSVs: $STOCKS_CSV and $COMPANIES_CSV" >&2
+      echo "Expected repo bundle chunks: $RAW_BUNDLE_DIR/$RAW_BUNDLE_NAME.part-*" >&2
+      echo "Set RAW_SOURCE=kaggle explicitly if you want to download from Kaggle." >&2
+      exit 2
     fi
   fi
 
   case "$RAW_SOURCE" in
+    repo_bundle)
+      import_raw_from_repo_bundle
+      ;;
     existing)
       ;;
     kaggle)
       download_raw_from_kaggle
       ;;
     *)
-      echo "Unsupported RAW_SOURCE=$RAW_SOURCE; use auto, existing, or kaggle." >&2
+      echo "Unsupported RAW_SOURCE=$RAW_SOURCE; use auto, repo_bundle, existing, or kaggle." >&2
       exit 2
       ;;
   esac
