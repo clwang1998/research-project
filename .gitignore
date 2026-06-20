@@ -16,6 +16,7 @@ venv/
 # Environment files and local credentials
 .env
 .env.*
+.mcp.json
 *.pem
 *.key
 *cookies*.txt
@@ -37,3 +38,13 @@ tmp/
 external/AutoResearchClaw_src/config*.yaml
 !external/AutoResearchClaw_src/config.researchclaw.example.yaml
 external/AutoResearchClaw_src/.env*
+
+# Local ARIS / Copilot reviewer installation.
+.aris/
+.github/skills/
+external/Auto-claude-code-research-in-sleep/
+
+# LaTeX build artifacts (keep .tex/.pdf/figures, drop intermediates)
+report/*.aux
+report/*.log
+report/*.out

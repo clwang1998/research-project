@@ -60,6 +60,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sample-count", type=int, default=1)
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument(
+        "--num-shards",
+        type=int,
+        default=1,
+        help="Split evaluation dates into this many disjoint shards.",
+    )
+    parser.add_argument(
+        "--shard-index",
+        type=int,
+        default=0,
+        help="0-based date shard index to run when --num-shards > 1.",
+    )
+    parser.add_argument(
         "--reference-metrics",
         default="output/model_pipeline/target_grid_core_refine_best_metrics.csv",
     )
@@ -74,6 +86,13 @@ def parse_args() -> argparse.Namespace:
         help="Append missing predictions when predictions.parquet already exists.",
     )
     return parser.parse_args()
+
+
+def validate_args(args: argparse.Namespace) -> None:
+    if args.num_shards < 1:
+        raise ValueError("--num-shards must be >= 1")
+    if args.shard_index < 0 or args.shard_index >= args.num_shards:
+        raise ValueError("--shard-index must satisfy 0 <= shard-index < num-shards")
 
 
 def target_col(family: str, horizon: int) -> str:
@@ -174,6 +193,12 @@ def selected_dates(targets: pd.DataFrame, stride: int, max_dates: int | None) ->
     if max_dates is not None:
         dates = dates[:max_dates]
     return dates
+
+
+def shard_dates(dates: pd.Index, num_shards: int, shard_index: int) -> pd.Index:
+    if num_shards == 1:
+        return dates
+    return pd.Index([dt for idx, dt in enumerate(dates) if idx % num_shards == shard_index])
 
 
 def find_position(dates: np.ndarray, dt: pd.Timestamp) -> int | None:
@@ -453,6 +478,7 @@ def write_summary(
         f"- Max dates: {args.max_dates}",
         f"- Max symbols: {args.max_symbols}",
         f"- Symbol sample: {args.symbol_sample}",
+        f"- Shard: {args.shard_index}/{args.num_shards}",
         f"- Dry run: {args.dry_run}",
         "",
         "## Coverage",
@@ -486,6 +512,7 @@ def write_summary(
 
 def main() -> None:
     args = parse_args()
+    validate_args(args)
     args.horizons = sorted(set(args.horizons))
     max_horizon = max(args.horizons)
     out_dir = Path(args.out_dir) / args.run_name
@@ -493,6 +520,8 @@ def main() -> None:
 
     targets = load_targets(args, args.horizons)
     eval_dates = selected_dates(targets, args.date_stride, args.max_dates)
+    all_eval_dates = eval_dates
+    eval_dates = shard_dates(eval_dates, args.num_shards, args.shard_index)
     stocks_by_symbol = load_stocks(args.stocks_csv, args.start_date, args.end_date)
     candidate_grid, _ = build_candidate_grid(
         stocks_by_symbol, targets, eval_dates, args.lookback, max_horizon
@@ -511,6 +540,10 @@ def main() -> None:
         "splits": args.splits,
         "date_stride": args.date_stride,
         "max_dates": args.max_dates,
+        "num_shards": args.num_shards,
+        "shard_index": args.shard_index,
+        "all_eval_dates": int(len(all_eval_dates)),
+        "shard_eval_dates": int(len(eval_dates)),
         "max_symbols": args.max_symbols,
         "symbol_sample": args.symbol_sample,
         "target_rows": int(len(targets)),

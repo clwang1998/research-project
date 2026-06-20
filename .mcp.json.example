@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "manual_review": {
+      "command": "python3",
+      "args": [
+        "/absolute/path/to/Auto-claude-code-research-in-sleep/mcp-servers/manual-review/server.py"
+      ],
+      "env": {
+        "MANUAL_REVIEW_SERVER_NAME": "manual_review",
+        "MANUAL_REVIEW_MODE": "browser",
+        "MANUAL_REVIEW_TIMEOUT_SEC": "86400"
+      }
+    }
+  }
+}

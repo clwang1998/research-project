@@ -7,6 +7,17 @@ This feature set uses only:
 
 No fundamentals, market cap, supply-chain, analyst, macro, or outside listing-date data is used.
 
+## Price Adjustment
+
+The raw `sp500_stocks.csv` exposes only a `close` column (no separate
+`Adj Close`). That `close` series is already **split-adjusted**: NVDA around its
+2024-06-10 10:1 split (120.68 -> 121.58) and AAPL around its 2020-08-31 4:1 split
+(121.06 -> 125.17) show no split-day gap, which is consistent with a yfinance
+`auto_adjust=True` export (split- and dividend-adjusted). All returns, momentum,
+volatility, and forward-return targets are therefore computed on an adjusted
+price, so stock splits do not inject artificial jumps. Residual uncertainty about
+dividend adjustment is treated as a minor data-quality limitation in the report.
+
 ## Data Preparation
 
 Run the CSV-to-Parquet preparation step once:
@@ -38,7 +49,7 @@ Current full build:
 | `statistical_linkage.parquet` | 8 |
 | `peer_style_geography.parquet` | 58 |
 | `cross_sectional.parquet` | 168 |
-| `targets.parquet` | 12 |
+| `targets.parquet` | 48 |
 
 The grouped layout is intentional: a single 500+ column pandas DataFrame is much slower and more memory-intensive than writing feature groups independently. Model training can read only the needed groups and join on `date, symbol`.
 
@@ -111,9 +122,9 @@ The script creates:
 - `target_excess_sector_fwd_{h}d`
 - `target_rank_fwd_{h}d`
 
-where `h` is one of `1, 5, 20, 30, 40, 50, 60, 70, 80, 90`.
+where `h` is one of `1, 5, 20, 30, 40, 50, 60, 70, 80, 90, 120, 150`.
 
-For this case study, the cleanest target is usually an excess-market or rank target, because it aligns with relative return prediction and avoids asking the model to forecast raw market direction. The long-horizon experiments additionally evaluate 30D/40D/50D/60D and 70D/80D/90D targets.
+For this case study, the cleanest target is usually an excess-market or rank target, because it aligns with relative return prediction and avoids asking the model to forecast raw market direction. The long-horizon experiments additionally evaluate 30D/40D/50D/60D, 70D/80D/90D, 120D, and 150D targets.
 
 ## Recommended Usage
 

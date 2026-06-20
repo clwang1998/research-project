@@ -251,6 +251,8 @@ def run_candidate(args: argparse.Namespace, base_config: dict[str, Any], spec: d
         str(base_config.get("val_end", "2020-12-31")),
         "--start-date",
         str(base_config.get("start_date", "2005-01-01")),
+        "--execution-lag-days",
+        str(base_config.get("execution_lag_days", 1)),
         "--rebalance-every",
         str(base_config.get("rebalance_every", 5)),
         "--transaction-cost-bps",
@@ -259,6 +261,8 @@ def run_candidate(args: argparse.Namespace, base_config: dict[str, Any], spec: d
         str(args.n_jobs),
         *spec["args"],
     ]
+    if base_config.get("embargo_days") is not None:
+        cmd.extend(["--embargo-days", str(base_config["embargo_days"])])
     with (run_dir / "run.log").open("w", encoding="utf-8") as log:
         log.write("$ " + " ".join(cmd) + "\n\n")
         log.flush()

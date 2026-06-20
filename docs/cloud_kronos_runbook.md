@@ -1,6 +1,7 @@
 # Cloud Kronos Runbook
 
-This runbook targets a single 48GB RTX 40-series GPU instance.
+This runbook targets either a single 48GB RTX 40-series GPU instance or a
+4x24GB RTX 3090 instance.
 
 ## 1. Upload And Unpack
 
@@ -58,6 +59,19 @@ This runs:
 All prediction jobs are checkpointed by date. If a run stops, repeat the same
 command; `--resume` is already included.
 
+For a 4xRTX 3090 instance, run zero-shot as date shards:
+
+```bash
+ZERO_SHOT_NUM_GPUS=4 \
+BATCH_SIZE=256 \
+scripts/run_cloud_kronos_plan.sh
+```
+
+This writes per-GPU shard outputs such as
+`cloud_small_full_shard0_of4/` and then merges them into the normal final output
+directory, for example `cloud_small_full/`. Use the merged directory for final
+IC and report comparison.
+
 Outputs are written under:
 
 ```text
@@ -84,6 +98,19 @@ RUN_BASE_FULL=0 \
 RUN_PREDICTOR_FINETUNE=1 \
 FINETUNE_EPOCHS=3 \
 FINETUNE_BATCH_SIZE=64 \
+scripts/run_cloud_kronos_plan.sh
+```
+
+On a 4xRTX 3090 instance, use Kronos DDP and lower the per-GPU batch size if
+needed:
+
+```bash
+RUN_SMALL_FULL=0 \
+RUN_BASE_FULL=0 \
+RUN_PREDICTOR_FINETUNE=1 \
+FINETUNE_NUM_GPUS=4 \
+FINETUNE_EPOCHS=3 \
+FINETUNE_BATCH_SIZE=32 \
 scripts/run_cloud_kronos_plan.sh
 ```
 
@@ -131,5 +158,7 @@ rsync -av user@host:/remote/workdir/research_project/output/kronos_finetune/ out
 ## 7. Practical Notes
 
 - Start with `BATCH_SIZE=256`; with 48GB GPU you can try `512` or `768`.
+- On 4xRTX 3090, `BATCH_SIZE=256` is per shard process. If Kronos-base OOMs on
+  a 24GB card, retry with `BATCH_SIZE=128`.
 - Keep `--resume`; full zero-shot is long and date-level checkpointing prevents wasted work.
 - The current local sampled benchmark showed Kronos-small zero-shot was not stable on test IC. The cloud run should confirm this at full scale and then test whether Kronos-base or fine-tuning changes the conclusion.

@@ -18,8 +18,24 @@ spread, and a long-short portfolio backtest.
   - train: up to `2018-12-31`
   - validation: `2019-01-01` to `2020-12-31`
   - test: after `2020-12-31`
-- Portfolio: long top decile, short bottom decile, rebalanced every 5 trading
-  days
+- Leakage controls:
+  - effective labels and portfolio returns start after a 1-trading-day execution
+    lag by default
+  - train/validation rows are purged when their forward label crosses the next
+    split boundary; the test/hold-out split is symmetrically purged of rows whose
+    forward label extends past the last available trading day
+  - validation/test starts are embargoed by the target horizon unless
+    `--embargo-days` is set
+  - features are winsorized per date at 1%/99% and the universe drops the bottom
+    10% by dollar volume each day (`--winsorize-pct`, `--min-dollar-volume-pct`)
+  - the rebalance interval defaults to the target horizon so portfolio returns are
+    non-overlapping, and rank ICIR is computed on a non-overlapping subsample so
+    long horizons are not inflated (`rank_ic_ir` vs reference `rank_ic_ir_raw`)
+- Validation: a single static split is the quick path; the canonical evaluation
+  is expanding yearly walk-forward with a final untouched hold-out, via
+  `scripts/run_walk_forward.py` and the grid in `scripts/run_walk_forward_grid.sh`
+- Portfolio: long top decile, short bottom decile, rebalanced every `horizon`
+  trading days
 - Metrics: rank IC, ICIR, top-bottom spread, annualized return, volatility,
   Sharpe, max drawdown, turnover, and transaction cost
 
@@ -46,7 +62,9 @@ python3 scripts/run_model_pipeline.py \
 ```
 
 `--max-eval-rows` preserves complete daily cross-sections, so rank and portfolio
-metrics still have valid per-date stock universes.
+metrics still have valid per-date stock universes. `--max-train-rows` likewise
+subsamples **whole dates** (seeded), keeping each selected day's full
+cross-section intact rather than dropping individual rows.
 
 ## Run The Main Ridge Version
 
@@ -58,6 +76,7 @@ python3 scripts/run_model_pipeline.py \
   --feature-set core \
   --train-end 2018-12-31 \
   --val-end 2020-12-31 \
+  --execution-lag-days 1 \
   --rebalance-every 5 \
   --transaction-cost-bps 5
 ```
@@ -88,6 +107,14 @@ python3 scripts/run_model_pipeline.py \
   --run-name ridge_core_20d \
   --target-col target_excess_sector_fwd_20d \
   --return-col target_ret_fwd_20d
+```
+
+Disable the default horizon-length embargo only for a diagnostic run:
+
+```bash
+python3 scripts/run_model_pipeline.py \
+  --run-name ridge_core_5d_no_embargo_diag \
+  --embargo-days 0
 ```
 
 Use all generated features:
@@ -128,6 +155,10 @@ Each run writes to `output/model_pipeline/<run-name>/`.
 - `predictions_val_test.parquet`: optional, only written with
   `--save-predictions`
 
+`summary.md` also includes a split audit table. For a leakage-clean run,
+`train.label_end_max` must be no later than `train-end`, and
+`val.label_end_max` must be no later than `val-end`.
+
 ## Report Interpretation
 
 In the report, present the workflow as:
@@ -137,7 +168,8 @@ In the report, present the workflow as:
    features.
 3. Define future sector-relative return as the prediction target.
 4. Compare a single-factor baseline with a multivariate model.
-5. Use time-based validation to avoid look-ahead leakage.
+5. Use time-based validation with label purge, horizon embargo, and one-day
+   execution lag to avoid look-ahead leakage.
 6. Convert daily scores into a top-decile long and bottom-decile short
    portfolio.
 7. Evaluate predictive power with IC and economic value with spread, Sharpe,

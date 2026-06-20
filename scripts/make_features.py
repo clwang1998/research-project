@@ -33,7 +33,7 @@ EMA_WINDOWS = [5, 10, 20, 50, 100, 200]
 RSI_WINDOWS = [6, 14, 28]
 BOLL_WINDOWS = [20, 60]
 CHANNEL_WINDOWS = [20, 60, 120]
-TARGET_WINDOWS = [1, 5, 20, 30, 40, 50, 60, 70, 80, 90]
+TARGET_WINDOWS = [1, 5, 20, 30, 40, 50, 60, 70, 80, 90, 120, 150]
 
 US_STATE_TO_REGION = {
     "Alabama": "South",
@@ -141,6 +141,12 @@ def safe_div(num: pd.Series | np.ndarray, den: pd.Series | np.ndarray) -> pd.Ser
 
 
 def infer_price_col(columns: Iterable[str]) -> str:
+    # The Kaggle ``sp500_stocks.csv`` ships only a ``close`` column, but that
+    # series is already split-adjusted (verified on NVDA 2024-06-10 10:1 and
+    # AAPL 2020-08-31 4:1, which show no split-day gap), consistent with a
+    # yfinance ``auto_adjust=True`` export that is also dividend-adjusted. We
+    # therefore treat ``close`` as the adjusted price. If a separate
+    # ``adj_close`` is ever present we prefer it.
     cols = set(columns)
     return "adj_close" if "adj_close" in cols else "close"
 

@@ -19,7 +19,7 @@ from typing import Any
 import pandas as pd
 
 
-HORIZONS = [1, 5, 20, 30, 40, 50, 60]
+HORIZONS = [1, 5, 20, 30, 90]
 TARGET_FAMILIES = ["ret", "excess_market", "rank", "excess_sector"]
 
 RIDGE_GRID = [
@@ -178,9 +178,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--train-end", default="2018-12-31")
     parser.add_argument("--val-end", default="2020-12-31")
     parser.add_argument("--start-date", default="2005-01-01")
-    parser.add_argument("--rebalance-every", default="5")
+    parser.add_argument("--execution-lag-days", default="1")
+    parser.add_argument("--embargo-days", default=None)
+    parser.add_argument(
+        "--rebalance-every",
+        default="auto",
+        help="'auto' lets the pipeline use rebalance == horizon so portfolio "
+        "returns are non-overlapping; pass an integer to override.",
+    )
     parser.add_argument("--transaction-cost-bps", default="5")
     parser.add_argument("--n-jobs", default="-1")
+    parser.add_argument("--xgboost-device", default="cpu")
+    parser.add_argument("--lightgbm-device-type", default="cpu")
     parser.add_argument("--max-train-rows", default=None)
     parser.add_argument("--max-eval-rows", default=None)
     parser.add_argument(
@@ -397,18 +406,26 @@ def main() -> None:
             args.val_end,
             "--start-date",
             args.start_date,
-            "--rebalance-every",
-            args.rebalance_every,
+            "--execution-lag-days",
+            args.execution_lag_days,
             "--transaction-cost-bps",
             args.transaction_cost_bps,
             "--n-jobs",
             args.n_jobs,
+            "--xgboost-device",
+            args.xgboost_device,
+            "--lightgbm-device-type",
+            args.lightgbm_device_type,
             *spec["args"],
         ]
+        if args.rebalance_every and str(args.rebalance_every) != "auto":
+            cmd.extend(["--rebalance-every", str(args.rebalance_every)])
         if args.max_train_rows:
             cmd.extend(["--max-train-rows", args.max_train_rows])
         if args.max_eval_rows:
             cmd.extend(["--max-eval-rows", args.max_eval_rows])
+        if args.embargo_days is not None:
+            cmd.extend(["--embargo-days", args.embargo_days])
 
         print(f"[{i}/{len(tasks)}] run {run_name}")
         start = time.time()

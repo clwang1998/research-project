@@ -10,6 +10,8 @@ DEVICE="${DEVICE:-cuda:0}"
 BATCH_SIZE="${BATCH_SIZE:-256}"
 SMOKE_BATCH_SIZE="${SMOKE_BATCH_SIZE:-128}"
 RUN_PREFIX="${RUN_PREFIX:-cloud}"
+ZERO_SHOT_NUM_GPUS="${ZERO_SHOT_NUM_GPUS:-1}"
+FINETUNE_NUM_GPUS="${FINETUNE_NUM_GPUS:-1}"
 RUN_SMOKE_SAMPLE="${RUN_SMOKE_SAMPLE:-1}"
 RUN_SMALL_FULL="${RUN_SMALL_FULL:-1}"
 RUN_BASE_FULL="${RUN_BASE_FULL:-1}"
@@ -20,45 +22,98 @@ FINETUNE_BATCH_SIZE="${FINETUNE_BATCH_SIZE:-64}"
 
 source "$VENV_DIR/bin/activate"
 
+run_zero_shot() {
+  local run_name="$1"
+  local model_id="$2"
+  local tokenizer_id="$3"
+  local batch_size="$4"
+  shift 4
+  local extra_args=("$@")
+
+  if (( ZERO_SHOT_NUM_GPUS <= 1 )); then
+    python scripts/run_kronos_zero_shot.py \
+      --run-name "$run_name" \
+      --batch-size "$batch_size" \
+      --min-names-per-date 100 \
+      --device "$DEVICE" \
+      --kronos-root "$KRONOS_ROOT" \
+      --model-id "$model_id" \
+      --tokenizer-id "$tokenizer_id" \
+      --resume \
+      "${extra_args[@]}"
+    return
+  fi
+
+  local pids=()
+  local shard
+  for shard in $(seq 0 $((ZERO_SHOT_NUM_GPUS - 1))); do
+    local shard_run_name="${run_name}_shard${shard}_of${ZERO_SHOT_NUM_GPUS}"
+    echo "== ${run_name} shard ${shard}/${ZERO_SHOT_NUM_GPUS} on GPU ${shard} =="
+    CUDA_VISIBLE_DEVICES="$shard" python scripts/run_kronos_zero_shot.py \
+      --run-name "$shard_run_name" \
+      --batch-size "$batch_size" \
+      --min-names-per-date 100 \
+      --device cuda:0 \
+      --kronos-root "$KRONOS_ROOT" \
+      --model-id "$model_id" \
+      --tokenizer-id "$tokenizer_id" \
+      --num-shards "$ZERO_SHOT_NUM_GPUS" \
+      --shard-index "$shard" \
+      --resume \
+      "${extra_args[@]}" &
+    pids+=("$!")
+  done
+
+  local failed=0
+  local pid
+  for pid in "${pids[@]}"; do
+    if ! wait "$pid"; then
+      failed=1
+    fi
+  done
+  if (( failed != 0 )); then
+    echo "At least one zero-shot shard failed for $run_name" >&2
+    exit 1
+  fi
+
+  python scripts/merge_kronos_zero_shot_shards.py \
+    --run-name "$run_name" \
+    --shard-glob "${run_name}_shard*_of${ZERO_SHOT_NUM_GPUS}/predictions.parquet" \
+    --model-id "$model_id" \
+    --tokenizer-id "$tokenizer_id" \
+    --min-names-per-date 100 \
+    "${extra_args[@]}"
+}
+
 if [[ "$RUN_SMOKE_SAMPLE" == "1" ]]; then
   echo "== Kronos smoke sample =="
-  python scripts/run_kronos_zero_shot.py \
-    --run-name "${RUN_PREFIX}_small_random_60dates_300" \
+  run_zero_shot \
+    "${RUN_PREFIX}_small_random_60dates_300" \
+    "NeoQuasar/Kronos-small" \
+    "NeoQuasar/Kronos-Tokenizer-base" \
+    "$SMOKE_BATCH_SIZE" \
     --date-stride 30 \
     --max-dates 60 \
     --max-symbols 300 \
-    --symbol-sample random \
-    --batch-size "$SMOKE_BATCH_SIZE" \
-    --min-names-per-date 100 \
-    --device "$DEVICE" \
-    --kronos-root "$KRONOS_ROOT" \
-    --resume
+    --symbol-sample random
 fi
 
 if [[ "$RUN_SMALL_FULL" == "1" ]]; then
   echo "== Kronos-small full zero-shot =="
-  python scripts/run_kronos_zero_shot.py \
-    --run-name "${RUN_PREFIX}_small_full" \
-    --batch-size "$BATCH_SIZE" \
-    --min-names-per-date 100 \
-    --device "$DEVICE" \
-    --kronos-root "$KRONOS_ROOT" \
-    --model-id NeoQuasar/Kronos-small \
-    --tokenizer-id NeoQuasar/Kronos-Tokenizer-base \
-    --resume
+  run_zero_shot \
+    "${RUN_PREFIX}_small_full" \
+    "NeoQuasar/Kronos-small" \
+    "NeoQuasar/Kronos-Tokenizer-base" \
+    "$BATCH_SIZE"
 fi
 
 if [[ "$RUN_BASE_FULL" == "1" ]]; then
   echo "== Kronos-base full zero-shot =="
-  python scripts/run_kronos_zero_shot.py \
-    --run-name "${RUN_PREFIX}_base_full" \
-    --batch-size "$BATCH_SIZE" \
-    --min-names-per-date 100 \
-    --device "$DEVICE" \
-    --kronos-root "$KRONOS_ROOT" \
-    --model-id NeoQuasar/Kronos-base \
-    --tokenizer-id NeoQuasar/Kronos-Tokenizer-base \
-    --resume
+  run_zero_shot \
+    "${RUN_PREFIX}_base_full" \
+    "NeoQuasar/Kronos-base" \
+    "NeoQuasar/Kronos-Tokenizer-base" \
+    "$BATCH_SIZE"
 fi
 
 if [[ "$RUN_PREDICTOR_FINETUNE" == "1" || "$RUN_TOKENIZER_FINETUNE" == "1" ]]; then
@@ -138,12 +193,12 @@ PY
 
   if [[ "$RUN_TOKENIZER_FINETUNE" == "1" ]]; then
     echo "== Fine-tune tokenizer =="
-    (cd "$KRONOS_ROOT" && torchrun --standalone --nproc_per_node=1 finetune/train_tokenizer.py)
+    (cd "$KRONOS_ROOT" && torchrun --standalone --nproc_per_node="$FINETUNE_NUM_GPUS" finetune/train_tokenizer.py)
   fi
 
   if [[ "$RUN_PREDICTOR_FINETUNE" == "1" ]]; then
     echo "== Fine-tune predictor =="
-    (cd "$KRONOS_ROOT" && torchrun --standalone --nproc_per_node=1 finetune/train_predictor.py)
+    (cd "$KRONOS_ROOT" && torchrun --standalone --nproc_per_node="$FINETUNE_NUM_GPUS" finetune/train_predictor.py)
   fi
 fi
 
