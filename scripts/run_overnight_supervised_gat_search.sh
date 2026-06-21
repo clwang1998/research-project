@@ -82,13 +82,40 @@ setup_python() {
   fi
 }
 
-ensure_data() {
-  if [[ -f data/processed/features_by_group/targets.parquet \
+processed_data_ready() {
+  [[ -f data/processed/features_by_group/targets.parquet \
      && -f data/processed/graphs/sector_edges.parquet \
-     && -f data/processed/graph_embeddings/graph_relation_embeddings_daily.parquet ]]; then
+     && -f data/processed/graph_embeddings/graph_relation_embeddings_daily.parquet ]] || return 1
+  SEARCH_HORIZONS="$SEARCH_HORIZONS" SEARCH_FAMILIES="$SEARCH_FAMILIES" python - <<'PY'
+import os
+import sys
+from pathlib import Path
+
+try:
+    import pyarrow.parquet as pq
+except Exception as exc:
+    print(f"Unable to inspect targets parquet schema: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+path = Path("data/processed/features_by_group/targets.parquet")
+horizons = [h for h in os.environ.get("SEARCH_HORIZONS", "").split() if h]
+families = [f for f in os.environ.get("SEARCH_FAMILIES", "").split() if f]
+required = {f"target_ret_fwd_{h}d" for h in horizons}
+for family in families:
+    required.update(f"target_{family}_fwd_{h}d" for h in horizons)
+available = set(pq.ParquetFile(path).schema_arrow.names)
+missing = sorted(required - available)
+if missing:
+    print("targets.parquet missing required columns: " + ", ".join(missing), file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+ensure_data() {
+  if processed_data_ready; then
     return
   fi
-  log "Processed data missing; rebuilding data pipeline."
+  log "Processed data missing or stale; rebuilding data pipeline."
   RUN_MODEL_SMOKE=0 RUN_TARGET_GRID=0 scripts/run_cloud_data_pipeline.sh \
     > "$LOG_DIR/data_pipeline.log" 2>&1
 }
@@ -133,13 +160,13 @@ run_search_phase() {
   local phase_name="$1"
   local models="$2"
   local variants="$3"
+  local -a sector_args=()
+  local -a budget_args=()
   log "START search phase ${phase_name}: models=${models}; variants=${variants}"
   # shellcheck disable=SC2086
-  sector_args=()
   if [[ "$SECTOR_NEUTRAL" == "1" ]]; then
     sector_args+=(--sector-neutral)
   fi
-  budget_args=()
   if [[ -n "$MAX_TRAIN_ROWS" ]]; then
     budget_args+=(--max-train-rows "$MAX_TRAIN_ROWS")
   fi

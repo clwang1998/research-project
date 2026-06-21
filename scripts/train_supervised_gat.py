@@ -14,6 +14,7 @@ import argparse
 import json
 import math
 import random
+import shutil
 import sys
 import time
 from dataclasses import dataclass
@@ -778,6 +779,35 @@ def write_fold_outputs(run_dir: Path, fold_name: str, pred: pd.DataFrame) -> Non
     ].to_parquet(fold_dir / "gat_predictions.parquet", index=False)
 
 
+def update_latest_outputs(out_dir: Path, run_dir: Path) -> None:
+    """Expose the most recent supervised-GAT run at out_dir/latest."""
+    latest_dir = out_dir / "latest"
+    if latest_dir.is_symlink() or latest_dir.is_file():
+        latest_dir.unlink()
+    latest_dir.mkdir(parents=True, exist_ok=True)
+    for file_name in [
+        "supervised_gat_oof_embeddings.parquet",
+        "supervised_gat_graph_date_embeddings.parquet",
+        "supervised_gat_graph_date_predictions.parquet",
+        "supervised_gat_metrics.json",
+        "config.json",
+        "selected_features.csv",
+    ]:
+        src = run_dir / file_name
+        if not src.exists():
+            continue
+        dst = latest_dir / file_name
+        if dst.is_symlink() or dst.is_file():
+            dst.unlink()
+        elif dst.is_dir():
+            shutil.rmtree(dst)
+        try:
+            dst.symlink_to(Path("..") / run_dir.name / file_name)
+        except OSError:
+            shutil.copy2(src, dst)
+    (latest_dir / "LATEST_RUN.txt").write_text(run_dir.name + "\n", encoding="utf-8")
+
+
 def clean_json(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(k): clean_json(v) for k, v in value.items()}
@@ -945,6 +975,7 @@ def main() -> None:
     config["output_columns"] = out_cols
     (run_dir / "config.json").write_text(json.dumps(config, indent=2, default=str), encoding="utf-8")
     pd.DataFrame({"feature": feature_cols}).to_csv(run_dir / "selected_features.csv", index=False)
+    update_latest_outputs(Path(args.out_dir), run_dir)
     print(f"Done. Supervised GAT outputs written to {run_dir}")
 
 

@@ -317,7 +317,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--include-supervised-graph-embeddings", action="store_true")
     parser.add_argument(
         "--supervised-graph-embedding-path",
-        default="data/processed/supervised_graph_embeddings/latest/supervised_gat_oof_embeddings.parquet",
+        default=None,
+        help="Required with --include-supervised-graph-embeddings; use the target-matched supervised GAT OOF parquet.",
     )
     parser.add_argument(
         "--max-lookback-days",
@@ -517,6 +518,11 @@ def load_panel(args: argparse.Namespace, feature_cols: list[str], fmap: pd.DataF
 
     supervised_graph_cols = [c for c in feature_cols if c in SUPERVISED_GRAPH_FEATURES]
     if supervised_graph_cols:
+        if not args.supervised_graph_embedding_path:
+            raise ValueError(
+                "--supervised-graph-embedding-path is required when supervised graph features are included. "
+                "Pass the target-matched supervised_gat_oof_embeddings.parquet file."
+            )
         supervised_graph_path = Path(args.supervised_graph_embedding_path)
         print(
             f"Joining supervised graph embeddings: {supervised_graph_path} "
@@ -524,7 +530,7 @@ def load_panel(args: argparse.Namespace, feature_cols: list[str], fmap: pd.DataF
         )
         supervised_graph = pd.read_parquet(
             supervised_graph_path,
-            columns=KEY_COLS + META_COLS + supervised_graph_cols,
+            columns=KEY_COLS + supervised_graph_cols,
         )
         if args.start_date:
             supervised_graph = supervised_graph.loc[
@@ -534,11 +540,23 @@ def load_panel(args: argparse.Namespace, feature_cols: list[str], fmap: pd.DataF
             supervised_graph = supervised_graph.loc[
                 supervised_graph["date"] <= pd.Timestamp(args.end_date)
             ]
+        if supervised_graph.duplicated(KEY_COLS).any():
+            dupes = int(supervised_graph.duplicated(KEY_COLS).sum())
+            raise ValueError(
+                f"Supervised graph embeddings contain {dupes} duplicate date/symbol rows: "
+                f"{supervised_graph_path}"
+            )
         panel = panel.merge(
             supervised_graph,
-            on=KEY_COLS + META_COLS,
+            on=KEY_COLS,
             how="left",
             sort=False,
+        )
+        missing_all = panel[supervised_graph_cols].isna().all(axis=1).mean()
+        missing_any = panel[supervised_graph_cols].isna().any(axis=1).mean()
+        print(
+            "Supervised graph embedding missing rows after join: "
+            f"all_features={missing_all:.2%}, any_feature={missing_any:.2%}"
         )
         del supervised_graph
 

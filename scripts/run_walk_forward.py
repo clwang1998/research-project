@@ -48,7 +48,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--include-supervised-graph-embeddings", action="store_true")
     parser.add_argument(
         "--supervised-graph-embedding-path",
-        default="data/processed/supervised_graph_embeddings/latest/supervised_gat_oof_embeddings.parquet",
+        default=None,
+        help="Required with --include-supervised-graph-embeddings; use the target-matched supervised GAT OOF parquet.",
     )
     parser.add_argument("--max-lookback-days", type=int, default=None)
     # Walk-forward schedule.
