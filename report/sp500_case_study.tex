@@ -17,6 +17,7 @@
 \usepackage[hidelinks]{hyperref}
 \usepackage{caption}
 \usepackage{float}
+\usepackage[table]{xcolor}
 \captionsetup{font=small,labelfont=bf}
 \setlist{nosep,leftmargin=1.4em}
 \graphicspath{{figures/}}
@@ -72,7 +73,10 @@ $t=1.31$, and bootstrap Sharpe CI $[-0.32,1.63]$. A calendar-slice stress test
 shows that the recent hold-out is momentum-friendly rather than representative.
 A partial inclusion-side PIT filter cuts the horizon-matched Sharpe from
 $0.620$ to $0.461$ and its own bootstrapped Sharpe CI is $[-0.49,1.43]$, so the
-portfolio Sharpe evidence is directional only. Reported net returns include
+portfolio Sharpe evidence is directional only. I would size any paper exposure
+off IC stability and turnover, not this recent-regime Sharpe; the kill criterion
+is a true point-in-time universe with delisting returns plus CPCV-style
+multi-regime stability. Reported net returns include
 explicit trading costs but exclude stock borrow; a simple 25/50/100~bps annual
 short-borrow haircut on 50\% short notional reduces the 5-day momentum Sharpe
 from 0.627 to 0.614/0.600/0.574. The ML/graph/residual models are not promoted
@@ -426,6 +430,11 @@ cost applied to realized turnover. We report rank IC, overlap-adjusted ICIR,
 decile spread, annualized net return, volatility, net Sharpe, max drawdown, and
 turnover. These net returns are gross of stock-borrow and financing costs unless
 explicitly stated; \S\ref{sec:discussion} adds a short-borrow sensitivity.
+Report tables use arithmetic annualized net return
+($\overline r_{\mathrm{period}}\times252/h$) to match the main evaluator; some
+archived paired-increment summaries also store geometric annualized returns for
+the same return streams, so return percentages can differ slightly while Sharpe
+and drawdown tie out.
 
 \subsection{Frequency-band and sleeve-book diagnostics}
 The final diagnostic pass asks whether a product should remain model-light:
@@ -607,12 +616,19 @@ thin-sample as a 30-day portfolio: Sharpe $0.740$ has mean-return $t=1.51$ and
 an i.i.d. bootstrap Sharpe interval of $[-0.22,1.85]$ over the same 35 periods.
 The plain 30d LightGBM row shows why horizon framing matters: a raw model can
 beat the overlay's Sharpe point estimate, but it fails the paper's
-validation-selection rule (validation ICIR $0.0804$ versus the selected MLP's
-$0.4882$), sits below the 884-row expected-max null Sharpe of $1.512$, and was
-not part of the archived Route~B DSR/PBO audit. I therefore do not use it to
+broad-grid walk-forward validation-selection rule (mean validation RankICIR
+$0.0804$ versus the selected MLP's $0.4882$), sits below the 884-row
+expected-max null Sharpe of $1.512$, and was not part of the archived Route~B
+DSR/PBO audit. I therefore do not use it to
 claim deflated alpha or to tune the final story after seeing the hold-out. The
 overlay is kept only for its economic sleeve role and lower turnover, not for
 raw performance dominance.
+\texttt{report/artifacts/route\_b\_cost\_breakeven/} recomputes both 30-day
+books from the same return/turnover streams at alternative per-side costs: the
+overlay Sharpe gap remains $0.246$ at 5~bps, $0.212$ at 25~bps, and $0.169$ at
+50~bps, with a Sharpe break-even near 147~bps per side. This means ordinary
+commission/slippage variation is not the main Route~B objection; the blocker is
+still the weak paired return increment and high momentum correlation.
 
 \begin{table}[H]
   \centering
@@ -629,7 +645,7 @@ raw performance dominance.
     Config & Source & Rank IC & ICIR & Net Sharpe & Ann.\ Ret & Max DD & Turnover \\
     \midrule
     Momentum baseline & canonical baseline & 0.0282 & 0.698 & 0.740 & 7.78\% & -13.83\% & \textbf{0.401} \\
-    Plain LightGBM model & raw hold-out diagnostic & 0.0362 & 0.802 & 1.226 & 12.95\% & -8.16\% & 0.631 \\
+    \rowcolor{black!6} Plain LightGBM model & raw hold-out diagnostic; val-rejected/unaudited & 0.0362 & 0.802 & 1.226 & 12.95\% & -8.16\% & 0.631 \\
     Route B overlay, $\lambda=0.2$ & val-selected sleeve & 0.0279 & 0.759 & 0.987 & 8.27\% & \textbf{-7.32\%} & 0.494 \\
     Paired increment & overlay $-$ momentum & -- & -- & $\Delta$0.246 & $\Delta$0.50\% & +6.51pp & $\Delta$0.093 \\
     Route B overlay, $\lambda=0.3$ & diagnostic only & 0.0280 & 0.806 & 1.201 & 9.98\% & -6.10\% & 0.521 \\
@@ -811,7 +827,7 @@ passed the Route~B deflation/attribution audit.
     \midrule
     30d & Momentum baseline (sector)            & 0.028 & 0.70 (3.04) & 0.74 & 7.8\% & 0.40 \\
     30d & MLP \emph{(broad-grid val-selected, sector)}      & 0.027 & 0.92 (3.88) & 0.69 & 6.5\% & 0.70 \\
-    30d & LightGBM (validation-rejected; unaudited)  & 0.036 & 0.80 (4.34) & 1.23 & 13.0\% & 0.63 \\
+    \rowcolor{black!6} 30d & LightGBM (val-rejected; unaudited; below 1.512 null)  & 0.036 & 0.80 (4.34) & 1.23 & 13.0\% & 0.63 \\
     30d & Route B overlay, $\lambda=0.2$         & 0.028 & 0.76 (3.07) & 0.99 & 8.3\% & 0.49 \\
     \bottomrule
   \end{tabular}
@@ -828,9 +844,9 @@ passed the Route~B deflation/attribution audit.
     \toprule
     Layer & Evidence & PM read-through \\
     \midrule
-    Signal IC & 1d hold-out Rank IC CI $[0.0115,0.0297]$; NW-21 $t=4.39$.
+    Signal existence & Non-traded 1d hold-out Rank IC CI $[0.0115,0.0297]$; NW-21 $t=4.39$.
       Traded 5d block-bootstrap IC $t=2.41$, CI $[0.004,0.042]$. &
-      Best-supported evidence that the raw cross-sectional momentum signal exists. \\
+      Best-supported evidence that the raw cross-sectional momentum signal exists; 5d is the traded benchmark. \\
     Portfolio & Net Sharpe $0.62$--$0.63$, mean-return $t=1.31$,
       Sharpe CI $[-0.32,1.63]$, turnover $0.22$. &
       Corroborating economics, but not statistically tight standalone Sharpe. \\
@@ -876,9 +892,14 @@ model/target/horizon/configuration rows imply an expected-max null Sharpe of
 but non-selected LightGBM 30-day Sharpe 1.226. Because that LightGBM row was not
 validation-selected and lacks a matching archived DSR/PBO audit, the fair
 claim is not that it has been disproved; it is that the paper has not
-demonstrated statistically deflated alpha from it. This DSR pools heterogeneous
-horizons and target families into one cross-trial null dispersion, which is a
-conservative penalty for the overlay, not a clean family-wise theorem. CSCV PBO
+demonstrated statistically deflated alpha from it. I use 884 as the primary
+trial family because it matches the research process that generated the
+candidates a PM could be tempted to keep: all archived model, target, horizon,
+ensemble, residual, and configuration searches, not only the final 30d sleeve.
+The narrower 14-trial same-target DSR is therefore reported as a diagnostic, not
+the headline standard. This DSR pools heterogeneous horizons and target families
+into one cross-trial null dispersion, which is a conservative penalty for the
+overlay, not a clean family-wise theorem. CSCV PBO
 is 50\%, but only across 28 compact strategies and 20 splits, so it is an
 adverse instability flag rather than a precise probability. This is the most
 important statistical conclusion:

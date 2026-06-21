@@ -1,0 +1,80 @@
+{
+  "description": "Route B 30d overlay versus 30d momentum transaction-cost sensitivity from existing non-overlapping return and turnover streams. Current evaluator charges 5 bps per side on realized turnover; this recomputes both books at alternative per-side costs.",
+  "source_momentum_returns": "report/artifacts/route_b_momentum_baseline/momentum_baseline_returns.csv",
+  "source_overlay_returns": "output/alpha_robustness_audit_route_b_30d/residual_overlay_test_backtest.csv",
+  "n_periods": 35,
+  "annualization_rebalances_per_year": 8.4,
+  "base_per_side_cost_bps": 5.0,
+  "avg_turnover_momentum": 0.40072974644403214,
+  "avg_turnover_overlay": 0.4941094619666048,
+  "sharpe_breakeven_per_side_cost_bps": 147.06760810151795,
+  "grid_max_per_side_cost_bps": 300.0,
+  "gap_at_grid_max": -0.26944975010704797,
+  "selected_cost_rows": [
+    {
+      "per_side_cost_bps": 5.0,
+      "momentum_sharpe": 0.7402730583919541,
+      "overlay_sharpe": 0.9865229735015892,
+      "sharpe_gap_overlay_minus_momentum": 0.24624991510963512,
+      "momentum_ann_return_arithmetic": 0.0777962714598271,
+      "overlay_ann_return_arithmetic": 0.08274841064855638,
+      "ann_return_gap_overlay_minus_momentum": 0.00495213918872929,
+      "momentum_max_drawdown": -0.13825203588214785,
+      "overlay_max_drawdown": -0.07324214471732982,
+      "momentum_avg_turnover": 0.40072974644403214,
+      "overlay_avg_turnover": 0.4941094619666048
+    },
+    {
+      "per_side_cost_bps": 25.0,
+      "momentum_sharpe": 0.675464015020611,
+      "overlay_sharpe": 0.8873322761636134,
+      "sharpe_gap_overlay_minus_momentum": 0.2118682611430024,
+      "momentum_ann_return_arithmetic": 0.07106401171956736,
+      "overlay_ann_return_arithmetic": 0.07444737168751744,
+      "ann_return_gap_overlay_minus_momentum": 0.0033833599679500836,
+      "momentum_max_drawdown": -0.14573100056564414,
+      "overlay_max_drawdown": -0.07531823789109082,
+      "momentum_avg_turnover": 0.40072974644403214,
+      "overlay_avg_turnover": 0.4941094619666048
+    },
+    {
+      "per_side_cost_bps": 50.0,
+      "momentum_sharpe": 0.5946414345323181,
+      "overlay_sharpe": 0.7633935327170381,
+      "sharpe_gap_overlay_minus_momentum": 0.16875209818472003,
+      "momentum_ann_return_arithmetic": 0.06264868704424269,
+      "overlay_ann_return_arithmetic": 0.06407107298621874,
+      "ann_return_gap_overlay_minus_momentum": 0.001422385941976051,
+      "momentum_max_drawdown": -0.1549979392910067,
+      "overlay_max_drawdown": -0.08333490830643786,
+      "momentum_avg_turnover": 0.40072974644403214,
+      "overlay_avg_turnover": 0.4941094619666048
+    },
+    {
+      "per_side_cost_bps": 100.0,
+      "momentum_sharpe": 0.4336438104449685,
+      "overlay_sharpe": 0.5157252949368962,
+      "sharpe_gap_overlay_minus_momentum": 0.0820814844919277,
+      "momentum_ann_return_arithmetic": 0.04581803769359334,
+      "overlay_ann_return_arithmetic": 0.043318475583621334,
+      "ann_return_gap_overlay_minus_momentum": -0.0024995621099720075,
+      "momentum_max_drawdown": -0.17446668663658738,
+      "overlay_max_drawdown": -0.09928348948879162,
+      "momentum_avg_turnover": 0.40072974644403214,
+      "overlay_avg_turnover": 0.4941094619666048
+    },
+    {
+      "per_side_cost_bps": 300.0,
+      "momentum_sharpe": -0.20103951101805073,
+      "overlay_sharpe": -0.4704892611250987,
+      "sharpe_gap_overlay_minus_momentum": -0.26944975010704797,
+      "momentum_ann_return_arithmetic": -0.021504559709004053,
+      "overlay_ann_return_arithmetic": -0.03969191402676826,
+      "ann_return_gap_overlay_minus_momentum": -0.01818735431776421,
+      "momentum_max_drawdown": -0.25116727309603937,
+      "overlay_max_drawdown": -0.2307262591238346,
+      "momentum_avg_turnover": 0.40072974644403214,
+      "overlay_avg_turnover": 0.4941094619666048
+    }
+  ]
+}
