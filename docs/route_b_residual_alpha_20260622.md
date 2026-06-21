@@ -41,7 +41,13 @@ cross-check: `eval_momentum_baseline.py` now reproduces the 30d sector-relative
 momentum row exactly (`output/momentum_baseline_priority/momentum_excess_sector_30d_sector_neutral.json`).
 Therefore the Route B overlay's absolute economic comparison can be read under
 one local evaluator: +0.247 Sharpe versus standalone 30d momentum before the
-DSR/PBO selection charge. The paired increment artifact in
+DSR/PBO selection charge. Symmetric inference still matters: the standalone
+30d momentum book's own 35-period Sharpe is imprecise (`t=1.51`, bootstrap
+Sharpe CI [-0.22, 1.85], `P(Sharpe > 0)=0.935`) and is archived in
+`report/artifacts/route_b_momentum_baseline/`. Its role as the core benchmark
+comes primarily from the pre-registered daily IC confirmation and external
+momentum literature, not from treating this thin portfolio Sharpe as
+production-grade evidence. The paired increment artifact in
 `report/artifacts/route_b_paired_increment/` is more conservative: across the
 same 35 rebalance dates, the mean return increment is only 0.059% per period
 (about 0.5% annualized), paired return-difference `t=0.25`, overlay--momentum
@@ -67,6 +73,7 @@ Post-training audit path, mirrored locally:
 
 | check | result | read |
 | --- | ---: | --- |
+| momentum baseline Sharpe CI | [-0.22, 1.85]; t=1.51 | positive but not significant as a 35-period portfolio |
 | bootstrap Sharpe 95% CI | [0.019, 1.796] | positive but wide |
 | DSR, same-target trials | 0.814 | encouraging within the narrow 30d target search |
 | DSR, full-grid trials | 0.003 | fails if charged for the broader experiment zoo |
@@ -98,9 +105,11 @@ The revised report should not claim that complex ML broadly beats momentum. The 
 > Momentum remains the base tradable signal. A compact XGBoost model trained on
 > factor-neutral residual labels provides a 30-day overlay that reduces
 > volatility and drawdown under the Route B pipeline, but the paired return
-> increment is not statistically distinguishable. The result is a candidate
-> risk-timing sleeve, not a confirmed alpha: the Rank IC improvement is
-> negligible, the full-grid DSR fails, CSCV PBO is 50%, and independent
-> style-neutral attribution is weak.
+> increment is not statistically distinguishable. Momentum's benchmark role is
+> supported by IC confirmation and prior literature, while its 30-day portfolio
+> Sharpe remains thin-sample. The overlay result is a candidate risk-timing
+> sleeve, not a confirmed alpha: the Rank IC improvement is negligible, the
+> full-grid DSR fails, CSCV PBO is 50%, and independent style-neutral
+> attribution is weak.
 
 This is materially better than the old graph/MLP/GAT story because it has a clean economic role: the model is not a replacement for momentum; it is a small residual sleeve added to a strong baseline.

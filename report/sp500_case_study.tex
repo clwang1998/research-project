@@ -72,6 +72,11 @@ paired return-difference $t$-stat is only 0.25 and the overlay is 93\%
 correlated with momentum. Its Rank IC gain is negligible, the bootstrap Sharpe
 gap interval crosses zero, and the strict full-grid DSR/PBO audit rejects a
 production alpha interpretation.
+Momentum's status as the core benchmark is anchored mainly on the
+pre-registered daily IC confirmation ($t=3.54$) and the external momentum
+literature, not on pretending that one 35-period 30-day portfolio Sharpe is
+precise: the standalone 30-day momentum book has Sharpe $0.740$, mean-return
+$t=1.51$, and an i.i.d. bootstrap Sharpe interval of $[-0.22,1.85]$.
 
 % ===========================================================================
 \section{Data}
@@ -564,23 +569,29 @@ paired return-difference $t$-stat is 0.25, the overlay--momentum correlation is
 therefore deliberately read conservatively: the sample has only $N=35$
 non-overlapping periods, the absolute bootstrap Sharpe CI is $[0.019,1.796]$,
 full-grid DSR is $0.003$ after 884 searched trials, PBO is 50\%, and the Rank
-IC change is within evaluator noise. The plain 30d LightGBM row shows why
-horizon framing matters: a raw model can beat the overlay's Sharpe point
-estimate, but it fails the paper's validation-selection rule (validation ICIR
-$0.0804$ versus the selected MLP's $0.4882$) and lacks archived DSR/PBO
-artifacts. The overlay is kept only for its economic sleeve role and lower
-turnover, not for raw performance dominance.
+IC change is within evaluator noise. The standalone momentum baseline is also
+thin-sample as a 30-day portfolio: Sharpe $0.740$ has mean-return $t=1.51$ and
+an i.i.d. bootstrap Sharpe interval of $[-0.22,1.85]$ over the same 35 periods.
+The plain 30d LightGBM row shows why horizon framing matters: a raw model can
+beat the overlay's Sharpe point estimate, but it fails the paper's
+validation-selection rule (validation ICIR $0.0804$ versus the selected MLP's
+$0.4882$), sits below the 884-trial expected-max null Sharpe of $1.512$, and
+lacks archived DSR/PBO artifacts. The overlay is kept only for its economic
+sleeve role and lower turnover, not for raw performance dominance.
 
 \begin{table}[H]
   \centering
   \caption{30-day sector-relative hold-out comparison, net of 5~bps/side cost.
-  Route~B has $N=35$ non-overlapping periods; its bootstrap Sharpe CI is
-  $[0.019,1.796]$, full-grid DSR is $0.003$ over 884 searched trials
+  Route~B has $N=35$ non-overlapping periods; the standalone momentum Sharpe
+  bootstrap CI is $[-0.22,1.85]$ and the overlay bootstrap Sharpe CI is
+  $[0.019,1.796]$. Full-grid DSR is $0.003$ over 884 searched trials
   (same-target DSR $0.814$ over 14 trials), and CSCV PBO is 50\%. The model is
   a candidate residual sleeve, not a replacement for momentum; overlay IC/ICIR
   is cross-convention and read only as approximately unchanged. The paired
   increment test uses archived returns in
-  \texttt{report/artifacts/route\_b\_paired\_increment/}.}\label{tab:route_b_30d}
+  \texttt{report/artifacts/route\_b\_paired\_increment/}; the standalone
+  momentum bootstrap uses
+  \texttt{report/artifacts/route\_b\_momentum\_baseline/}.}\label{tab:route_b_30d}
   \scriptsize
   \setlength{\tabcolsep}{3pt}
   \begin{tabular}{lccccccc}
@@ -763,9 +774,9 @@ passed the Route~B deflation/attribution audit.
   ICIR is the naive overlapping value, shown only to document inflation. Bold is
   used only for the pre-30d benchmark blocks; the 30d block is too thin
   ($N=35$ non-overlapping periods for Route~B) and unaudited plain-model rows are
-  not statistically rankable. The 20d block is market-relative because that was the
-  best archived validation family for the model comparison, while 5d/30d use the
-  sector-relative production benchmark.}\label{tab:results}
+  not statistically rankable. The target family is marked in every row: 20d is
+  market-relative because that was the best archived validation family for the
+  model comparison, while 5d/30d use the sector-relative production benchmark.}\label{tab:results}
   \small
   \setlength{\tabcolsep}{4pt}
   \begin{tabular}{llccccc}
@@ -782,7 +793,8 @@ passed the Route~B deflation/attribution audit.
     20d & Ridge (market)                        & 0.029 & 0.54 (2.27) & 0.76 & \textbf{9.8\%} & 0.61 \\
     \midrule
     30d & Momentum baseline (sector)            & 0.028 & 0.70 (3.04) & 0.74 & 7.8\% & \textbf{0.40} \\
-    30d & LightGBM (sector; val ICIR 0.08, unaudited)  & 0.036 & 0.80 (4.34) & 1.23 & 13.0\% & 0.63 \\
+    30d & MLP \emph{(val-selected, sector)}      & 0.027 & 0.92 (3.88) & 0.69 & 6.5\% & 0.70 \\
+    30d & LightGBM (sector; val ICIR 0.08, $<1.512$ null)  & 0.036 & 0.80 (4.34) & 1.23 & 13.0\% & 0.63 \\
     30d & Route B overlay, $\lambda=0.2$         & $\approx$0.028 & $\approx$0.77 & 0.99 & 8.3\% & 0.49 \\
     \bottomrule
   \end{tabular}
@@ -812,13 +824,17 @@ Sharpe must be treated as a selected maximum, not as a single pre-specified
 experiment. For the Route~B 30-day overlay, raw hold-out Sharpe is 0.987 and the
 bootstrap 95\% Sharpe interval is $[0.019,1.796]$. The same-target DSR is 0.814,
 but full-grid DSR falls to 0.003 because the 884-trial expected-max null Sharpe
-is 1.512, above the observed 0.987; CSCV PBO is 50\%. This is the most important
-statistical conclusion: the overlay is a materially better research lead than
-the old graph/MLP direction, but still not a statistically deflated production
-alpha. The paired overlay-minus-momentum test reinforces that conclusion: the
-overlay is 93\% correlated with momentum, reduces period volatility, and has a
-return-difference $t$-stat of only 0.25. The separate factor-sleeve book is
-even weaker: after charging
+is 1.512, above both the observed overlay Sharpe 0.987 and the visually stronger
+but non-selected LightGBM 30-day Sharpe 1.226; CSCV PBO is 50\%. This is the
+most important statistical conclusion: the overlay is a materially better
+research lead than the old graph/MLP direction, but still not a statistically
+deflated production alpha. The paired overlay-minus-momentum test reinforces
+that conclusion: the overlay is 93\% correlated with momentum, reduces period
+volatility, and has a return-difference $t$-stat of only 0.25. Symmetric rigor
+also weakens any overconfident reading of the benchmark portfolio itself: the
+30-day momentum Sharpe is positive but imprecise, with mean-return $t=1.51$ and
+bootstrap Sharpe CI $[-0.22,1.85]$. The separate factor-sleeve book is even
+weaker: after charging
 the 12 pre-registered single-factor trials, the combined momentum/reversal book
 has DSR 0.055 and a bootstrap Sharpe interval that crosses zero. It is useful as
 a falsification exercise, not as a new product claim.
@@ -913,14 +929,16 @@ selection, explicit leakage controls, and a single-factor baseline that every
 model must clear in a clearly specified metric. The realistic conclusion is
 sobering: broad multivariate, graph, MLP, and residual-overlay searches do
 \emph{not} pass a production-grade alpha audit. Momentum is the only clearly
-confirmed raw factor, and even the best Route~B residual sleeve remains
-exploratory. Its 2022--2026 point estimate improves the 30-day momentum book's
-Sharpe from $0.740$ to $0.987$ and drawdown from $-13.8\%$ to $-7.3\%$, but the
-paired return increment is not statistically distinguishable ($t=0.25$) and the
-overlay is 93\% correlated with momentum. Over only 35 non-overlapping periods,
-with negligible Rank IC improvement, full-grid DSR $0.003$, PBO 50\%, and
-Fama--MacBeth $t=0.05$, the result is best interpreted as volatility/drawdown
-dampening rather than established residual alpha. A later frequency-band and
+confirmed raw factor by IC confirmation and prior evidence, while its 30-day
+portfolio Sharpe is still imprecise over only 35 non-overlapping periods
+($t=1.51$, bootstrap CI $[-0.22,1.85]$). Even the best Route~B residual sleeve
+remains exploratory. Its 2022--2026 point estimate improves the 30-day momentum
+book's Sharpe from $0.740$ to $0.987$ and drawdown from $-13.8\%$ to $-7.3\%$,
+but the paired return increment is not statistically distinguishable ($t=0.25$)
+and the overlay is 93\% correlated with momentum. With negligible Rank IC
+improvement, full-grid DSR $0.003$, PBO 50\%, and Fama--MacBeth $t=0.05$, the
+result is best interpreted as volatility/drawdown dampening rather than
+established residual alpha. A later frequency-band and
 two-sleeve product diagnostic strengthens the conservative side of the
 conclusion: a momentum-plus-reversal inverse-vol book fails DSR. I would not
 trade the model as a standalone alpha, and I would not promote it without

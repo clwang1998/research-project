@@ -1,0 +1,14 @@
+metric,value
+source,output/model_search/route_b_factor_residual_alpha_core_20260622__target_excess_sector_fwd_30d__tabular__ridge__linear_alpha_1000/baseline_score_test_backtest.csv
+n_periods,35
+annualization_rebalances_per_year,8.4
+ann_return_net,0.0777962714598271
+ann_vol_net,0.10509131809932236
+sharpe_net,0.7402730583919542
+period_mean_net_return,0.009261460888074653
+period_sd_net_return,0.03625994960311708
+mean_return_t_stat,1.5110760528248535
+bootstrap_sharpe_ci_2p5,-0.2161506110169893
+bootstrap_sharpe_ci_97p5,1.8466938772416337
+bootstrap_prob_sharpe_positive,0.93455
+max_drawdown_net,-0.13825203588214785
