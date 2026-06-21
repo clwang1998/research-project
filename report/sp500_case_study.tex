@@ -62,13 +62,18 @@ single-factor momentum baseline $\rightarrow$ compact Ridge/XGBoost models
 trained on factor-neutral residual labels $\rightarrow$ a validation-selected
 momentum-plus-residual overlay $\rightarrow$ rank IC / ICIR, DSR/PBO,
 style-neutral attribution, capacity, and cost-aware portfolio backtests. The
-research decision is simple: on price/volume plus sector metadata alone, keep
-low-turnover 12--1 momentum as the tradable benchmark, do not promote the
-ML/graph/residual models as standalone alpha, and spend the next research
-dollar on a true point-in-time universe with delisting returns. The headline
-result is negative and deflation-first: on this current-membership S\&P~500
-dataset, no broad multivariate, graph, MLP, or residual overlay construction
-produces statistically deflated alpha beyond the 12--1 momentum benchmark. The
+research decision is simple: on price/volume plus sector metadata alone, trade
+or benchmark against low-turnover 12--1 momentum at the shorter traded horizons
+where the hold-out evidence is strongest, do not promote the ML/graph/residual
+models as standalone alpha, and spend the next research dollar on a true
+point-in-time universe with delisting returns. The strongest tradable row is the
+5-day sector-neutral momentum book (net Sharpe $0.63$, turnover $0.22$,
+block-bootstrap IC $t=2.41$), but even the endorsed signal is materially
+survivorship-sensitive: the partial inclusion-side PIT filter cuts the 30-day
+momentum Sharpe from $0.741$ to $0.446$. The headline result is therefore
+negative and deflation-first: on this current-membership S\&P~500 dataset, no
+broad multivariate, graph, MLP, or residual overlay construction produces
+statistically deflated alpha beyond the 12--1 momentum benchmark. The
 30-trading-day sector-neutral residual overlay reduces
 volatility and drawdown versus standalone momentum, but it does not add
 statistically distinguishable return: over 35 non-overlapping test periods the
@@ -81,9 +86,10 @@ pre-registered 1-day cross-sectional IC confirmation (plain $t=3.54$;
 Newey--West lag-21 $t=4.39$) and the external momentum literature, not on
 pretending that one 35-period 30-day portfolio Sharpe is precise. At traded
 horizons the same signal is lower-power: a focused HAC/block check gives
-hold-out block-bootstrap $t$ of 2.41/2.13/1.89/1.85 at 5/10/20/30 days, and the
-standalone 30-day momentum book has Sharpe $0.740$, mean-return $t=1.51$, and
-an i.i.d. bootstrap Sharpe interval of $[-0.22,1.85]$.
+hold-out block-bootstrap $t$ of 2.41/2.13/1.89/1.85 at 5/10/20/30 days, with
+the 20d/30d block-bootstrap IC intervals crossing zero. The standalone 30-day
+momentum book has Sharpe $0.740$, mean-return $t=1.51$, and an i.i.d.
+bootstrap Sharpe interval of $[-0.22,1.85]$.
 
 % ===========================================================================
 \section{Data}
@@ -523,9 +529,10 @@ strength collapses from $t=5.51$ to $t=0.41$, volume shock flips sign, and
 reversal keeps the expected sign but is weak. A follow-up traded-horizon
 momentum check using \texttt{report/artifacts/momentum\_ic\_traded\_horizons/}
 keeps the horizon seam explicit: block-bootstrap $t$ is 2.41 at 5d, 2.13 at
-10d, 1.89 at 20d, and 1.85 at 30d. This is a clean warning that attractive
-in-sample IC is not reliable even for single-factor economics, not just for ML
-models.
+10d, 1.89 at 20d, and 1.85 at 30d; the corresponding block-bootstrap mean-IC
+intervals are positive at 5d/10d but cross zero at 20d/30d. This is a clean
+warning that 1-day IC confirms signal existence, while tradability is
+horizon- and cost-limited even before adding ML.
 
 \begin{table}[H]
   \centering
@@ -575,7 +582,9 @@ against sector and OHLCV style proxies. The tradable score is then
 $z(\text{momentum})+0.2z(\text{residual XGBoost})$, with $\lambda=0.2$ selected
 on validation Sharpe. Table~\ref{tab:route_b_30d} compares this Route~B overlay
 with standalone momentum and the strongest plain 30d sector model on the
-2022--2026 hold-out. The overlay improves the point-estimate economic profile
+2022--2026 hold-out. This is a deliberately separate 30-day sleeve diagnostic,
+not the headline proof that momentum is tradable. The overlay improves the
+point-estimate economic profile
 relative to momentum (Sharpe $0.74 \rightarrow 0.99$, max drawdown
 $-13.8\% \rightarrow -7.3\%$), but a paired increment test shows that this is
 mostly volatility and drawdown dampening rather than new return: mean
@@ -691,8 +700,9 @@ paper from presenting graph features, seed bagging, or date aggregates as
 successful complexity.
 
 \textbf{PM-level robustness audit.} The Route~B 30-day overlay is the best
-current research lead, but it is still \emph{not} a production-grade alpha
-claim. A post-training audit treats the full search as multiple testing, applies
+current residual-sleeve research lead, but it is still \emph{not} a
+production-grade alpha claim. A post-training audit treats the full search as
+multiple testing, applies
 CSCV/PBO, neutralizes the final score against available style proxies, and
 stresses capacity and survivorship. The result is mixed: hold-out economics are
 better than momentum, and the same-target DSR is encouraging, but the full-grid
@@ -791,12 +801,13 @@ passed the Route~B deflation/attribution audit.
   single-factor momentum baseline is sourced from
   \texttt{eval\_momentum\_baseline.py}; model rows are the walk-forward
   validation selections in \texttt{docs/horizon\_comparison.md}. Parenthetical
-  ICIR is the naive overlapping value, shown only to document inflation. Bold is
-  used only for the pre-30d benchmark blocks; the 30d block is too thin
-  ($N=35$ non-overlapping periods for Route~B) and unaudited plain-model rows are
-  not statistically rankable. The target family is marked in every row: 20d is
-  market-relative because that was the best archived validation family for the
-  model comparison, while 5d/30d use the sector-relative production benchmark.}\label{tab:results}
+  ICIR is the naive overlapping value, shown only to document inflation. The
+  5d/20d/30d blocks are all sector-relative to avoid target-family
+  cherry-picking; the 20d momentum IC/ICIR comes from the traded-horizon
+  robustness artifact, while the economic row is the same canonical momentum
+  baseline evaluator. Bold is used only for the pre-30d benchmark blocks; the
+  30d block is too thin ($N=35$ non-overlapping periods for Route~B) and
+  unaudited plain-model rows are not statistically rankable.}\label{tab:results}
   \small
   \setlength{\tabcolsep}{4pt}
   \begin{tabular}{llccccc}
@@ -808,9 +819,9 @@ passed the Route~B deflation/attribution audit.
     5d  & Ridge (sector)                        & 0.010 & 0.40 (0.99) & 0.53 & 5.1\% & 0.65 \\
     5d  & LightGBM (sector)                     & 0.009 & 0.20 (1.17) & 0.24 & 1.7\% & 0.53 \\
     \midrule
-    20d & Momentum baseline (market)            & \textbf{0.042} & \textbf{0.65} (3.51) & \textbf{0.82} & 7.8\% & \textbf{0.36} \\
-    20d & LightGBM \emph{(val-selected, market)} & 0.028 & 0.39 (2.47) & 0.49 & 5.5\% & 0.64 \\
-    20d & Ridge (market)                        & 0.029 & 0.54 (2.27) & 0.76 & \textbf{9.8\%} & 0.61 \\
+    20d & Momentum baseline (sector)            & \textbf{0.031} & \textbf{0.58} (--) & \textbf{0.82} & 7.8\% & \textbf{0.36} \\
+    20d & LightGBM \emph{(val-selected, sector)} & 0.021 & 0.48 (2.42) & 0.65 & 5.3\% & 0.66 \\
+    20d & Ridge (sector)                        & 0.017 & 0.34 (1.66) & 0.83 & 9.0\% & 0.60 \\
     \midrule
     30d & Momentum baseline (sector)            & 0.028 & 0.70 (3.04) & 0.74 & 7.8\% & 0.40 \\
     30d & MLP \emph{(val-selected, sector)}      & 0.027 & 0.92 (3.88) & 0.69 & 6.5\% & 0.70 \\
@@ -908,9 +919,11 @@ delisting-side parametric sensitivity: applying annual delisting rate $\times$
 average delisting loss to half the book leaves the Route~B overlay Sharpe at
 0.951 in a base case (2\% annual delisting rate, $-30\%$ average delisting
 return) and 0.837 in a stress case (5\%, $-50\%$). Neither exercise is a true
-correction, and the sign is not proven for a long--short momentum tilt because
-missing delisters could have appeared on either side of the book. The right fix
-is point-in-time constituents and delisting returns.
+correction. The 0.741$\rightarrow$0.446 momentum haircut is therefore the
+survivorship-aware number a PM should keep in mind for this dataset, not a
+minor footnote; the missing short side and delisting returns remain
+unidentified because absent names could have appeared on either side of the
+book. The right fix is point-in-time constituents and delisting returns.
 
 \textbf{Kronos and survivorship bias.} Kronos is not used as a reported alpha
 model in this paper. Its relevant role is only as a possible future data-universe
@@ -966,13 +979,16 @@ selection, explicit leakage controls, and a single-factor baseline that every
 model must clear in a clearly specified metric. The realistic conclusion is
 sobering: broad multivariate, graph, MLP, and residual-overlay searches do
 \emph{not} pass a production-grade alpha audit. Momentum is the only clearly
-confirmed raw factor by 1-day IC confirmation and prior evidence, while its
-30-day implementation is still imprecise over only 35 non-overlapping periods
-($t=1.51$, bootstrap CI $[-0.22,1.85]$). Its daily IC confirmation is more
-robust: a 21-day block bootstrap puts the hold-out mean Rank IC CI at
-$[0.0115,0.0297]$ and Newey--West lag-21 gives $t=4.39$; the traded-horizon
-HAC/block evidence is positive but only marginal by 20--30 days. Even the best
-Route~B residual sleeve
+confirmed raw factor by 1-day IC confirmation and prior evidence, and the 5-day
+sector-neutral implementation is the cleanest tradable benchmark in this study
+(Sharpe $0.63$, turnover $0.22$, block-bootstrap IC $t=2.41$). But this is not
+a production-ready endorsement: the partial PIT inclusion filter cuts the
+30-day momentum Sharpe from $0.741$ to $0.446$, and the 30-day implementation is
+imprecise over only 35 non-overlapping periods ($t=1.51$, bootstrap CI
+$[-0.22,1.85]$). Its daily IC confirmation is more robust: a 21-day block
+bootstrap puts the hold-out mean Rank IC CI at $[0.0115,0.0297]$ and
+Newey--West lag-21 gives $t=4.39$; the traded-horizon HAC/block evidence is
+positive but only marginal by 20--30 days. Even the best Route~B residual sleeve
 remains exploratory. Its 2022--2026 point estimate improves the 30-day momentum
 book's Sharpe from $0.740$ to $0.987$ and drawdown from $-13.8\%$ to $-7.3\%$,
 but the paired return increment is not statistically distinguishable ($t=0.25$)
