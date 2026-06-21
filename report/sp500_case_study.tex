@@ -73,10 +73,11 @@ correlated with momentum. Its Rank IC gain is negligible, the bootstrap Sharpe
 gap interval crosses zero, and the strict full-grid DSR/PBO audit rejects a
 production alpha interpretation.
 Momentum's status as the core benchmark is anchored mainly on the
-pre-registered daily IC confirmation ($t=3.54$) and the external momentum
-literature, not on pretending that one 35-period 30-day portfolio Sharpe is
-precise: the standalone 30-day momentum book has Sharpe $0.740$, mean-return
-$t=1.51$, and an i.i.d. bootstrap Sharpe interval of $[-0.22,1.85]$.
+pre-registered daily IC confirmation (plain $t=3.54$; Newey--West lag-21
+$t=4.39$) and the external momentum literature, not on pretending that one
+35-period 30-day portfolio Sharpe is precise: the standalone 30-day momentum
+book has Sharpe $0.740$, mean-return $t=1.51$, and an i.i.d. bootstrap Sharpe
+interval of $[-0.22,1.85]$.
 
 % ===========================================================================
 \section{Data}
@@ -524,15 +525,15 @@ single-factor economics, not just for ML models.
     \toprule
     Signal & Native $h$ & Disc.\ ICIR & Disc.\ $t$ & Test $t$ & Hold-out read-through \\
     \midrule
-    \texttt{mom\_252d\_skip\_21d} & 1d & 0.589 & 2.20 & 3.54 &
+    \texttt{mom\_252d\_skip\_21d} & 1d & 0.595 & 2.23 & 3.54 &
     Only significant survivor; stronger OOS. \\
     \texttt{amihud\_20d} & 40d & 1.467 & 5.51 & 0.41 &
     In-sample champion, OOS decay. \\
-    \texttt{ret\_5d} reversal & 1d & -1.027 & -3.84 & -0.91 &
+    \texttt{ret\_5d} reversal & 1d & -1.027 & -3.84 & -0.94 &
     Sign stable, but too weak. \\
     Low-risk block & 1d & -0.432 to -0.793 & -1.62 to -2.97 & $\approx 0$ &
     Vol/idiosyncratic-vol/beta effect decays. \\
-    \texttt{volume\_z\_20d} & 60d & 0.532 & 1.99 & -1.91 &
+    \texttt{volume\_z\_20d} & 60d & 0.532 & 1.99 & -1.93 &
     Sign flips on the hold-out. \\
     \bottomrule
   \end{tabular}
@@ -587,8 +588,8 @@ sleeve role and lower turnover, not for raw performance dominance.
   $[0.019,1.796]$. Full-grid DSR is $0.003$ over 884 searched trials
   (same-target DSR $0.814$ over 14 trials), and CSCV PBO is 50\%. The model is
   a candidate residual sleeve, not a replacement for momentum; overlay IC/ICIR
-  is cross-convention and read only as approximately unchanged. The paired
-  increment test uses archived returns in
+  is reported under the same canonical raw-label convention as the standalone
+  momentum row. The paired increment test uses archived returns in
   \texttt{report/artifacts/route\_b\_paired\_increment/}; the standalone
   momentum bootstrap uses
   \texttt{report/artifacts/route\_b\_momentum\_baseline/}.}\label{tab:route_b_30d}
@@ -600,7 +601,7 @@ sleeve role and lower turnover, not for raw performance dominance.
     \midrule
     Momentum baseline & canonical baseline & 0.0282 & 0.698 & 0.740 & 7.78\% & -13.83\% & \textbf{0.401} \\
     Plain LightGBM model & not val-selected & 0.0362 & 0.802 & 1.226 & 12.95\% & -8.16\% & 0.631 \\
-    Route B overlay, $\lambda=0.2$ & val-selected sleeve & $\approx$0.028 & $\approx$0.77 & 0.987 & 8.27\% & \textbf{-7.32\%} & 0.494 \\
+    Route B overlay, $\lambda=0.2$ & val-selected sleeve & 0.0279 & 0.759 & 0.987 & 8.27\% & \textbf{-7.32\%} & 0.494 \\
     Paired increment & overlay $-$ momentum & -- & -- & $\Delta$0.246 & $\Delta$0.50\% & +6.51pp & $\Delta$0.093 \\
     Route B overlay, $\lambda=0.3$ & diagnostic only & 0.0280 & 0.806 & 1.201 & 9.98\% & -6.10\% & 0.521 \\
     \bottomrule
@@ -612,16 +613,14 @@ outputs are mirrored locally under the Route~B model-search and robustness
 audit output directories. A focused rerun
 of \texttt{eval\_momentum\_baseline.py} for the 30d sector-relative target
 reproduces the canonical 30d momentum economic row exactly: Sharpe $0.740$,
-annual return $7.78\%$, max drawdown $-13.83\%$, and turnover $0.401$. The
-audit CSV uses a different score/label convention for the raw Rank IC column
-and reports negative baseline/overlay ICs even when the economic rows match.
-I therefore use the canonical evaluator for the Table~\ref{tab:route_b_30d}
-momentum Rank IC and treat the overlay's IC as approximately unchanged rather
-than claiming exact IC traceability. Under the audit convention the overlay
-Rank IC is $-0.0083$ versus the baseline's $-0.0105$, so the overlay changes
-rank information by only about $+0.002$ even before considering estimator
-noise. The weakness is both statistical deflation and rank-IC convention
-alignment; the economic comparison remains reproducible.
+annual return $7.78\%$, max drawdown $-13.83\%$, and turnover $0.401$. I also
+recompute the selected Route~B overlay score against the same raw forward label
+in \texttt{report/artifacts/route\_b\_canonical\_ic/}: canonical Rank IC is
+$0.0279$ versus momentum's $0.0282$, and ICIR is $0.759$ versus $0.698$. Under
+the residualized-label audit convention, the signs flip (overlay $-0.0083$
+versus baseline $-0.0105$), which is useful only as a residual-target diagnostic.
+Both conventions say the same PM-relevant thing: the overlay's rank-information
+gain is negligible; the economic comparison remains reproducible.
 
 \textbf{Route B paired increment.} The archived paired return stream is the
 cleaner comparison than two absolute Sharpe estimates. The overlay and momentum
@@ -795,7 +794,7 @@ passed the Route~B deflation/attribution audit.
     30d & Momentum baseline (sector)            & 0.028 & 0.70 (3.04) & 0.74 & 7.8\% & \textbf{0.40} \\
     30d & MLP \emph{(val-selected, sector)}      & 0.027 & 0.92 (3.88) & 0.69 & 6.5\% & 0.70 \\
     30d & LightGBM (sector; val ICIR 0.08, $<1.512$ null)  & 0.036 & 0.80 (4.34) & 1.23 & 13.0\% & 0.63 \\
-    30d & Route B overlay, $\lambda=0.2$         & $\approx$0.028 & $\approx$0.77 & 0.99 & 8.3\% & 0.49 \\
+    30d & Route B overlay, $\lambda=0.2$         & 0.028 & 0.76 (3.07) & 0.99 & 8.3\% & 0.49 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -931,14 +930,17 @@ sobering: broad multivariate, graph, MLP, and residual-overlay searches do
 \emph{not} pass a production-grade alpha audit. Momentum is the only clearly
 confirmed raw factor by IC confirmation and prior evidence, while its 30-day
 portfolio Sharpe is still imprecise over only 35 non-overlapping periods
-($t=1.51$, bootstrap CI $[-0.22,1.85]$). Even the best Route~B residual sleeve
+($t=1.51$, bootstrap CI $[-0.22,1.85]$). Its daily IC confirmation is more
+robust: a 21-day block bootstrap puts the hold-out mean Rank IC CI at
+$[0.0115,0.0297]$ and Newey--West lag-21 gives $t=4.39$. Even the best
+Route~B residual sleeve
 remains exploratory. Its 2022--2026 point estimate improves the 30-day momentum
 book's Sharpe from $0.740$ to $0.987$ and drawdown from $-13.8\%$ to $-7.3\%$,
 but the paired return increment is not statistically distinguishable ($t=0.25$)
-and the overlay is 93\% correlated with momentum. With negligible Rank IC
-improvement, full-grid DSR $0.003$, PBO 50\%, and Fama--MacBeth $t=0.05$, the
-result is best interpreted as volatility/drawdown dampening rather than
-established residual alpha. A later frequency-band and
+and the overlay is 93\% correlated with momentum. With canonical Rank IC
+$0.0279$ versus momentum's $0.0282$, full-grid DSR $0.003$, PBO 50\%, and
+Fama--MacBeth $t=0.05$, the result is best interpreted as volatility/drawdown
+dampening rather than established residual alpha. A later frequency-band and
 two-sleeve product diagnostic strengthens the conservative side of the
 conclusion: a momentum-plus-reversal inverse-vol book fails DSR. I would not
 trade the model as a standalone alpha, and I would not promote it without

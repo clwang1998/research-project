@@ -27,14 +27,17 @@ where the XGBoost model is `xgb_balanced` trained on the 30d factor-neutral resi
 | 30d signal | test raw RankIC | test raw ICIR | net Sharpe | ann. return | max drawdown | turnover |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | momentum baseline | 0.0282 | 0.698 | 0.740 | 7.78% | -13.83% | 0.401 |
-| Route B overlay, val-selected | ~0.028 | ~0.77 | 0.987 | 8.27% | -7.32% | 0.494 |
+| Route B overlay, val-selected | 0.0279 | 0.759 | 0.987 | 8.27% | -7.32% | 0.494 |
 | Route B overlay, diagnostic lambda=0.3 | 0.0280 | 0.806 | 1.201 | 9.98% | -6.10% | 0.521 |
 
 Use the validation-selected `lambda=0.2` line only as an exploratory
 risk-sleeve result. The diagnostic `lambda=0.3` line is shown for transparency
-but was not the validation-selected overlay weight. The overlay IC/ICIR is
-cross-convention in the current archived artifacts, so it should be read as
-approximately unchanged versus momentum rather than as an ICIR win.
+but was not the validation-selected overlay weight. The overlay IC/ICIR now
+comes from `report/artifacts/route_b_canonical_ic/`, which recomputes the
+selected robustness-audit score against the same raw forward label used by the
+momentum row. Under that canonical convention the overlay RankIC is 0.0279
+versus momentum's 0.0282; under the residualized-label audit convention the
+sign flips but the same conclusion holds: rank-information gain is negligible.
 
 The synchronized local artifacts also preserve the standard-baseline
 cross-check: `eval_momentum_baseline.py` now reproduces the 30d sector-relative
@@ -47,7 +50,10 @@ Sharpe CI [-0.22, 1.85], `P(Sharpe > 0)=0.935`) and is archived in
 `report/artifacts/route_b_momentum_baseline/`. Its role as the core benchmark
 comes primarily from the pre-registered daily IC confirmation and external
 momentum literature, not from treating this thin portfolio Sharpe as
-production-grade evidence. The paired increment artifact in
+production-grade evidence. The daily IC robustness artifact in
+`report/artifacts/momentum_ic_robustness/` reports hold-out plain `t=3.54`,
+Newey-West lag-21 `t=4.39`, and a 21-day block-bootstrap mean RankIC CI of
+[0.0115, 0.0297]. The paired increment artifact in
 `report/artifacts/route_b_paired_increment/` is more conservative: across the
 same 35 rebalance dates, the mean return increment is only 0.059% per period
 (about 0.5% annualized), paired return-difference `t=0.25`, overlay--momentum
