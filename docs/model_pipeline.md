@@ -11,6 +11,9 @@ spread, and a long-short portfolio backtest.
 - Realized portfolio return: `target_ret_fwd_5d`
 - Feature set: curated `core` technical, liquidity, market, peer, and
   cross-sectional features
+- Feature variants: `tabular` uses the core feature set; `graph` appends
+  sector graph, style kNN graph, rolling-correlation graph, and deterministic
+  graph relation embedding features
 - Baseline: single-factor cross-sectional momentum rank
 - Model: ridge regression by default, with optional `lightgbm`, `xgboost`, or
   `sklearn-hgb`
@@ -34,6 +37,8 @@ spread, and a long-short portfolio backtest.
 - Validation: a single static split is the quick path; the canonical evaluation
   is expanding yearly walk-forward with a final untouched hold-out, via
   `scripts/run_walk_forward.py` and the grid in `scripts/run_walk_forward_grid.sh`
+  The grid defaults to both `tabular` and `graph` feature variants; set
+  `FEATURE_VARIANTS="tabular"` or `FEATURE_VARIANTS="graph"` to run only one.
 - Portfolio: long top decile, short bottom decile, rebalanced every `horizon`
   trading days
 - Metrics: rank IC, ICIR, top-bottom spread, annualized return, volatility,
@@ -123,6 +128,27 @@ Use all generated features:
 python3 scripts/run_model_pipeline.py \
   --run-name ridge_all_5d \
   --feature-set all
+```
+
+Use the graph-augmented core feature variant:
+
+```bash
+python3 scripts/run_model_pipeline.py \
+  --run-name ridge_core_graph_5d \
+  --feature-set core \
+  --include-graph-embeddings
+```
+
+Run the canonical walk-forward grid for both feature variants:
+
+```bash
+scripts/run_walk_forward_grid.sh
+```
+
+Run only the graph variant:
+
+```bash
+FEATURE_VARIANTS="graph" scripts/run_walk_forward_grid.sh
 ```
 
 Use selected feature groups:

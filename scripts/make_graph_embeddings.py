@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Create relation-aware graph attention embeddings from sparse graph edges.
+"""Create graph relation embeddings from sparse graph edges.
 
-This is a dependency-light, deterministic GAT-style encoder. It does not train
-on future returns. Instead it uses relation-specific projections and attention
-over the constructed graph edges to produce node embeddings that can be joined
-back into the tabular model.
+This is a dependency-light, deterministic graph relation encoder. It does not
+train on future returns. Instead it uses relation-specific projections over the
+constructed graph edges to produce node embeddings that can be joined back into
+the tabular model.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--compression", default="zstd")
     parser.add_argument("--skip-daily", action="store_true")
+    parser.add_argument("--audit-path", default="data/processed/graph_feature_audit.json")
     return parser.parse_args()
 
 
@@ -125,7 +126,7 @@ def aggregate_relation(
     return out, degree
 
 
-def gat_layer(
+def graph_relation_layer(
     x: np.ndarray,
     edges_by_relation: dict[str, pd.DataFrame],
     symbol_to_idx: dict[str, int],
@@ -188,7 +189,7 @@ def make_rebalance_embeddings(
             rel: rel_dates.get(pd.Timestamp(date), pd.DataFrame())
             for rel, rel_dates in edges.items()
         }
-        h1, _rel_w1 = gat_layer(
+        h1, _rel_w1 = graph_relation_layer(
             x,
             edge_day,
             symbol_to_idx,
@@ -196,7 +197,7 @@ def make_rebalance_embeddings(
             params["rel_query1"],
             params["self1"],
         )
-        h2, rel_w2 = gat_layer(
+        h2, rel_w2 = graph_relation_layer(
             h1,
             edge_day,
             symbol_to_idx,
@@ -272,6 +273,52 @@ def expand_to_daily(
     return out
 
 
+def build_daily_audit(daily: pd.DataFrame | None, hidden_dim: int) -> dict[str, object]:
+    if daily is None:
+        return {"daily_embeddings_written": False}
+
+    emb_cols = [f"graph_emb_{i}" for i in range(hidden_dim)]
+    rel_cols = [f"graph_rel_weight_{rel}" for rel in RELATIONS]
+    feature_cols = emb_cols + rel_cols
+    missing = daily[feature_cols].isna().any(axis=1)
+    present = ~missing
+    rel_sum = daily.loc[present, rel_cols].sum(axis=1) if present.any() else pd.Series(dtype="float32")
+    first_date = daily.loc[present, "date"].min() if present.any() else pd.NaT
+    last_date = daily.loc[present, "date"].max() if present.any() else pd.NaT
+    return {
+        "daily_embeddings_written": True,
+        "daily_embedding_rows": int(len(daily)),
+        "daily_embedding_dates": int(daily["date"].nunique()),
+        "daily_embedding_symbols": int(daily["symbol"].nunique()),
+        "rows_with_missing_embedding": int(missing.sum()),
+        "missing_embedding_pct": float(missing.mean()) if len(daily) else 0.0,
+        "first_embedding_date_by_any_symbol": None
+        if pd.isna(first_date)
+        else str(pd.Timestamp(first_date).date()),
+        "last_embedding_date_by_any_symbol": None
+        if pd.isna(last_date)
+        else str(pd.Timestamp(last_date).date()),
+        "relation_weight_sum_min": None if rel_sum.empty else float(rel_sum.min()),
+        "relation_weight_sum_max": None if rel_sum.empty else float(rel_sum.max()),
+    }
+
+
+def write_graph_audit(
+    audit_path: Path,
+    edge_metadata: dict[str, object],
+    embedding_metadata: dict[str, object],
+    daily: pd.DataFrame | None,
+    hidden_dim: int,
+) -> None:
+    audit = {
+        "graph_edges": edge_metadata,
+        "graph_embeddings": embedding_metadata,
+        "daily_embedding_audit": build_daily_audit(daily, hidden_dim),
+    }
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    audit_path.write_text(json.dumps(audit, indent=2), encoding="utf-8")
+
+
 def main() -> None:
     args = parse_args()
     start = time.perf_counter()
@@ -279,20 +326,27 @@ def main() -> None:
     out_dir = Path(args.out_dir)
     feature_dir = Path(args.feature_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    edge_metadata_path = graph_dir / "graph_edge_metadata.json"
+    edge_metadata = (
+        json.loads(edge_metadata_path.read_text(encoding="utf-8"))
+        if edge_metadata_path.exists()
+        else {}
+    )
 
     node = pd.read_parquet(graph_dir / "graph_node_features.parquet")
     node["date"] = pd.to_datetime(node["date"])
     node["symbol"] = node["symbol"].astype(str)
     edges = load_edges(graph_dir)
     emb_rebalance = make_rebalance_embeddings(node, edges, args.hidden_dim, args.seed)
-    rebalance_path = out_dir / "gat_embeddings_rebalance.parquet"
+    rebalance_path = out_dir / "graph_relation_embeddings_rebalance.parquet"
     emb_rebalance.to_parquet(rebalance_path, index=False, compression=args.compression)
 
     daily_path = None
     daily_rows = None
+    daily = None
     if not args.skip_daily:
         daily = expand_to_daily(emb_rebalance, feature_dir, args.hidden_dim)
-        daily_path = out_dir / "gat_embeddings_daily.parquet"
+        daily_path = out_dir / "graph_relation_embeddings_daily.parquet"
         daily.to_parquet(daily_path, index=False, compression=args.compression)
         daily_rows = int(len(daily))
 
@@ -301,7 +355,7 @@ def main() -> None:
             {
                 "feature": f"graph_emb_{i}",
                 "category": "graph_embedding",
-                "description": "Relation-aware two-layer graph attention embedding.",
+                "description": "Deterministic graph relation embedding.",
             }
             for i in range(args.hidden_dim)
         ]
@@ -318,7 +372,7 @@ def main() -> None:
     feature_manifest.to_csv(manifest_path, index=False)
 
     metadata = {
-        "encoder": "deterministic_relation_aware_gat_style",
+        "encoder": "deterministic_graph_relation_encoder",
         "trained_on_targets": False,
         "relations": RELATIONS,
         "node_features": STYLE_FEATURES,
@@ -335,6 +389,13 @@ def main() -> None:
     }
     metadata_path = out_dir / "graph_embedding_metadata.json"
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    write_graph_audit(
+        Path(args.audit_path),
+        edge_metadata,
+        metadata,
+        daily,
+        args.hidden_dim,
+    )
     print(json.dumps(metadata, indent=2), flush=True)
 
 

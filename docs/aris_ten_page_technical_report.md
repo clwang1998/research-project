@@ -75,7 +75,7 @@ Each modeling row is one stock-date observation. Features are built at the
 stock-date level, often with rolling windows over past returns, volatility, or
 volume, and may also include cross-sectional transforms computed within a date,
 sector, or sub-industry bucket. Targets are forward returns at horizons from 1
-to 150 trading days. The default runnable pipeline uses a 5-day horizon, a
+to 90 trading days. The default runnable pipeline uses a 5-day horizon, a
 one-day execution lag, and a 5-trading-day rebalance schedule. That combination
 is a pragmatic medium-frequency research setup: slow enough to move beyond
 microstructure noise, but short enough to preserve a meaningful number of
@@ -191,7 +191,7 @@ feature catalog reports the following group sizes in the current full build:
 | `statistical_linkage.parquet` | 8 |
 | `peer_style_geography.parquet` | 58 |
 | `cross_sectional.parquet` | 168 |
-| `targets.parquet` | 48 |
+| `targets.parquet` | 40 |
 
 The technical feature families cover standard daily systematic-equity signals:
 
@@ -240,7 +240,7 @@ Graph features are the most distinctive extension. The repository adds:
 - sector/sub-industry graph edges,
 - style k-nearest-neighbor edges,
 - rolling-correlation edges,
-- deterministic relation-aware graph embeddings.
+- deterministic graph relation embeddings.
 
 The edge convention is directional: `src` is the stock receiving information and
 `dst` is the neighbor sending information. Graphs are rebuilt every 20 trading
@@ -250,7 +250,7 @@ from the latest rebalance date. Rows before the first rebalance naturally have
 missing graph embeddings and must be dropped or imputed in downstream modeling.
 
 The graph encoder is intentionally conservative. It is a deterministic,
-dependency-light, GAT-style feature encoder rather than a fully supervised
+dependency-light graph relation feature encoder rather than a fully supervised
 end-to-end graph neural network trained on forward returns. That matters for
 leakage control: the graph embedding is designed as a no-lookahead feature
 transform, not a label-trained sequence model that would require its own
@@ -264,6 +264,14 @@ dimensionality and keeps the first-pass model path fast and inspectable. The
 `all` option and explicit `--feature-groups` path remain available for broader
 experiments.
 
+Graph inclusion is now a formal feature variant rather than a manual side path.
+The walk-forward grid supports `FEATURE_VARIANTS="tabular graph"` by default:
+`tabular` uses the curated core feature set, while `graph` appends
+`graph_emb_0` through `graph_emb_15` plus the three relation-fusion weights for
+sector, style kNN, and rolling-correlation edges. The scripts write
+`feature_variant`, `feature_count`, and `graph_feature_count` into run metadata
+so tabular and graph results can be selected and compared without mixing them.
+
 ## 5. Labeling, Horizon Alignment, and Leakage Controls
 
 Label construction is where this project became materially stronger after the
@@ -275,14 +283,14 @@ families across horizons:
 - `target_excess_sector_fwd_{h}d`
 - `target_rank_fwd_{h}d`
 
-with \(h \in \{1, 5, 20, 30, 40, 50, 60, 70, 80, 90, 120, 150\}\).
+with \(h \in \{1, 5, 20, 30, 40, 50, 60, 70, 80, 90\}\).
 
 The forward-return logic is standard in concept but dangerous at split
 boundaries. A row dated \(t\) uses future price information out to \(t+h\).
 Without extra controls, the last rows of a training block will silently use
 future validation-period prices to define their labels, and long horizons make
 that contamination non-trivial. The leakage review quantified this problem and
-showed that for long horizons such as 60D or 120D, a meaningful fraction of
+showed that for long horizons such as 60D or 90D, a meaningful fraction of
 training rows can have labels that extend into the next split.
 
 The current main pipeline fixes this by explicitly constructing:
@@ -333,10 +341,10 @@ technical report should emphasize.
 
 The modeling pipeline in `scripts/run_model_pipeline.py` is designed as an
 end-to-end, dependency-light research harness. It loads the target panel,
-selectively joins feature groups, optionally merges graph embeddings, attaches
-effective labels, applies split logic, fits a preprocessor on training rows
-only, trains a model, scores validation and test rows, and writes both numeric
-artifacts and a report-friendly summary.
+selectively joins feature groups, merges graph embeddings when the graph variant
+is requested, attaches effective labels, applies split logic, fits a
+preprocessor on training rows only, trains a model, scores validation and test
+rows, and writes both numeric artifacts and a report-friendly summary.
 
 The default baseline is deliberately simple: a single cross-sectional momentum
 rank feature. The default model is ridge regression implemented in NumPy, which
@@ -501,7 +509,7 @@ What remains provisional are the final performance comparisons, especially:
 
 - tabular baseline leaderboard values,
 - horizon-generalization conclusions,
-- graph-feature uplift estimates,
+- graph-feature uplift estimates from the full graph variant grid,
 - foundation-model universe-completion protocols,
 - any claim about deployable long-short profitability after realistic frictions.
 
@@ -536,7 +544,9 @@ construction datasets.
 The fifth limitation is graph maturity. The graph embeddings are careful and
 no-lookahead, but they are still an unsupervised feature layer rather than a
 fully trained graph model. The research question "do graph relations improve
-out-of-sample ranking?" is therefore still open.
+out-of-sample ranking?" is therefore still open until the full graph variant
+walk-forward grid is rerun and archived under the same protocol as the tabular
+grid.
 
 The sixth limitation is an implementation detail noted in the leakage review:
 when `--max-train-rows` is used, training rows are randomly sampled within the
@@ -571,7 +581,7 @@ that pack should include:
 - a default ridge `core` run,
 - LightGBM and XGBoost comparisons on the same clean split,
 - horizon sweeps for 1D, 5D, 20D, and selected longer horizons,
-- graph-embedding inclusion versus exclusion,
+- graph versus tabular feature variants in the walk-forward grid,
 - sector-neutral versus non-sector-neutral portfolio construction where useful.
 
 The second priority is validation hardening. The documented walk-forward

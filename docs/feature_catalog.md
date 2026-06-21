@@ -10,13 +10,14 @@ No fundamentals, market cap, supply-chain, analyst, macro, or outside listing-da
 ## Price Adjustment
 
 The raw `sp500_stocks.csv` exposes only a `close` column (no separate
-`Adj Close`). That `close` series is already **split-adjusted**: NVDA around its
-2024-06-10 10:1 split (120.68 -> 121.58) and AAPL around its 2020-08-31 4:1 split
-(121.06 -> 125.17) show no split-day gap, which is consistent with a yfinance
-`auto_adjust=True` export (split- and dividend-adjusted). All returns, momentum,
-volatility, and forward-return targets are therefore computed on an adjusted
-price, so stock splits do not inject artificial jumps. Residual uncertainty about
-dividend adjustment is treated as a minor data-quality limitation in the report.
+`Adj Close`). We audited major split events and verified that this `close`
+behaves as an adjusted close price: NVDA around its 2024-06-10 10:1 split
+(120.68 -> 121.58) and AAPL around its 2020-08-31 4:1 split (121.06 -> 125.17)
+show no split-day gap, which is consistent with a yfinance `auto_adjust=True`
+export. In this project, `close` is therefore treated as the adjusted close used
+for all returns, momentum, volatility, and forward-return targets. Residual
+uncertainty about dividend adjustment is treated as a minor data-quality
+limitation in the report.
 
 ## Data Preparation
 
@@ -26,7 +27,12 @@ Run the CSV-to-Parquet preparation step once:
 python scripts/prepare_data.py
 ```
 
-This writes typed Parquet files under `data/interim/`. Numeric OHLCV columns are stored as `float32`, while `symbol`, `sector`, `sub_industry`, and headquarters fields are stored as categorical columns.
+This writes cleaned, typed Parquet files under `data/interim/`. The preparation
+step normalizes tickers, removes duplicate stock-days, drops rows with missing
+core OHLCV fields, non-positive prices/volume, or impossible OHLC relationships,
+and records the audit in `data/interim/prepare_data_metadata.json`. Numeric OHLCV
+columns are stored as `float32`, while `symbol`, `sector`, `sub_industry`, and
+headquarters fields are stored as categorical columns.
 
 For the full feature build, use the grouped-output script:
 
@@ -49,7 +55,7 @@ Current full build:
 | `statistical_linkage.parquet` | 8 |
 | `peer_style_geography.parquet` | 58 |
 | `cross_sectional.parquet` | 168 |
-| `targets.parquet` | 48 |
+| `targets.parquet` | 40 |
 
 The grouped layout is intentional: a single 500+ column pandas DataFrame is much slower and more memory-intensive than writing feature groups independently. Model training can read only the needed groups and join on `date, symbol`.
 
@@ -122,9 +128,9 @@ The script creates:
 - `target_excess_sector_fwd_{h}d`
 - `target_rank_fwd_{h}d`
 
-where `h` is one of `1, 5, 20, 30, 40, 50, 60, 70, 80, 90, 120, 150`.
+where `h` is one of `1, 5, 20, 30, 40, 50, 60, 70, 80, 90`.
 
-For this case study, the cleanest target is usually an excess-market or rank target, because it aligns with relative return prediction and avoids asking the model to forecast raw market direction. The long-horizon experiments additionally evaluate 30D/40D/50D/60D, 70D/80D/90D, 120D, and 150D targets.
+For this case study, the cleanest target is usually an excess-market or rank target, because it aligns with relative return prediction and avoids asking the model to forecast raw market direction. Target horizons are intentionally capped at 90D; 120D and 150D labels are excluded because they provide too few non-overlapping validation periods for stable model selection.
 
 ## Recommended Usage
 
