@@ -63,13 +63,16 @@ trained on factor-neutral residual labels $\rightarrow$ a validation-selected
 momentum-plus-residual overlay $\rightarrow$ rank IC / ICIR, DSR/PBO,
 style-neutral attribution, capacity, and cost-aware portfolio backtests. The
 research decision is simple: on price/volume plus sector metadata alone, the
-only defensible trading benchmark is low-turnover 12--1 momentum, with the
-5-day sector-neutral implementation preferred because it has the cleanest
-traded-horizon IC evidence and the lowest turnover ($0.22$). That is a
-conviction call, not a statistically tight Sharpe claim: 5d net Sharpe is
-$0.62$--$0.63$, mean-return $t=1.31$, bootstrap Sharpe CI $[-0.32,1.63]$, and a
-partial inclusion-side PIT filter cuts the horizon-matched estimate from
-$0.620$ to $0.461$. The ML/graph/residual models are not promoted as standalone
+only defensible trading benchmark is low-turnover 12--1 momentum, and the
+specific book I would keep as the research benchmark is the 5-day
+sector-neutral implementation. Its case rests on traded-horizon IC and
+turnover, not on a tight portfolio Sharpe: block-bootstrap IC $t=2.41$ with
+mean-IC CI $[0.004,0.042]$, turnover $0.22$, net Sharpe $0.62$--$0.63$,
+mean-return $t=1.31$, and bootstrap Sharpe CI $[-0.32,1.63]$. A partial
+inclusion-side PIT filter cuts the horizon-matched Sharpe from $0.620$ to
+$0.461$ and its own bootstrapped Sharpe CI is $[-0.49,1.43]$, so the portfolio
+Sharpe evidence is directional only. The ML/graph/residual models are not
+promoted as standalone
 alpha: the 30-day residual overlay lowers volatility and drawdown, but over 35
 non-overlapping periods its paired return increment has $t=0.25$, 93\%
 correlation with momentum, a Sharpe-gap CI crossing zero, full-grid DSR
@@ -77,18 +80,22 @@ $0.003$, and PBO 50\%. The next research dollar should therefore go to a true
 point-in-time universe with delisting returns and lower-turnover execution
 tests, not to a larger model zoo.
 
-Momentum's status as the core benchmark is anchored mainly on the
-pre-registered 1-day cross-sectional IC confirmation (plain $t=3.54$;
-Newey--West lag-21 $t=4.39$) and the external momentum literature. At traded
-horizons the same signal is lower-power: a focused HAC/block check gives
-hold-out block-bootstrap $t$ of 2.41/2.13/1.89/1.85 at 5/10/20/30 days, with
-the 20d/30d block-bootstrap IC intervals crossing zero. The standalone 20-day
+Momentum's status as the core tradable benchmark is anchored first on the
+traded-horizon evidence: the 5-day sector-neutral signal has positive
+block-bootstrap IC support ($t=2.41$, mean-IC CI $[0.004,0.042]$) at the
+lowest turnover among tested horizons. The pre-registered 1-day
+cross-sectional IC confirmation (plain $t=3.54$; Newey--West lag-21 $t=4.39$)
+is corroborating evidence that the signal exists, not the trading statistic.
+At longer traded horizons the same signal is lower-power: a focused HAC/block
+check gives hold-out block-bootstrap $t$ of 2.13/1.89/1.85 at 10/20/30 days,
+with the 20d/30d block-bootstrap IC intervals crossing zero. The standalone 20-day
 momentum book has a higher Sharpe point estimate ($0.83$), but its IC interval
 crosses zero, its portfolio Sharpe is still imprecise (mean-return $t=1.69$,
 bootstrap CI $[-0.12,1.90]$), and the PIT inclusion filter cuts Sharpe from
-$0.828$ to $0.513$. The standalone 30-day momentum book has Sharpe $0.740$,
+$0.828$ to $0.513$ with a filtered CI of $[-0.45,1.58]$. The standalone 30-day momentum book has Sharpe $0.740$,
 mean-return $t=1.51$, an i.i.d. bootstrap Sharpe interval of $[-0.22,1.85]$,
-and a PIT inclusion haircut from $0.741$ to $0.446$.
+and a PIT inclusion haircut from $0.741$ to $0.446$ with a filtered CI of
+$[-0.52,1.50]$.
 
 % ===========================================================================
 \section{Data}
@@ -581,7 +588,7 @@ Bartlett long-run variance estimate tightens rather than widens.
   \end{minipage}
 \end{figure}
 
-\textbf{Route B 30-day residual overlay.} The final research lead comes from
+\textbf{Route B 30-day residual overlay.} The secondary residual-sleeve lead comes from
 the narrower residual-target rerun, not from the graph/MLP zoo. XGBoost is
 trained on 30-day sector-relative labels after daily ridge residualization
 against sector and OHLCV style proxies. The tradable score is then
@@ -747,7 +754,7 @@ independent confirmation.
     Fama--MacBeth signal $t$-stat & 0.05 & No convincing independent residual-alpha coefficient. \\
     Factor-neutral Sharpe, return, FM $t$ & 1.006; 8.27\%$\rightarrow$5.17\%; 0.05 & Sharpe is mechanically similar because the residualized book remains momentum-like; FM $t$ is the decisive orthogonality test. \\
     Capacity Sharpe at \$100M / \$1B & 0.948 / 0.864 & Capacity is plausible at modest scale; participation rises at \$1B. \\
-    PIT inclusion sensitivity & Mom. 5d 0.620$\rightarrow$0.461; 20d 0.828$\rightarrow$0.513; 30d 0.741$\rightarrow$0.446 & Partial inclusion-side check weakens the endorsed benchmark; overlay 30d is 0.987$\rightarrow$0.725 and remains exploratory. \\
+    PIT inclusion sensitivity & Mom. 5d 0.620$\rightarrow$0.461, CI $[-0.49,1.43]$; 20d 0.828$\rightarrow$0.513; 30d 0.741$\rightarrow$0.446 & Partial inclusion-side check weakens the endorsed benchmark; overlay 30d is 0.987$\rightarrow$0.725 and remains exploratory. \\
     Survivorship stress-haircut Sharpe & 0.837 & Sensitivity does not destroy the result, but remains uncorrected. \\
     \bottomrule
   \end{tabular}
@@ -823,7 +830,10 @@ passed the Route~B deflation/attribution audit.
   uncertainty is in
   \texttt{report/artifacts/momentum\_portfolio\_uncertainty/}: 5d/20d/30d
   Sharpe CIs are $[-0.32,1.63]$, $[-0.12,1.90]$, and $[-0.22,1.85]$; PIT
-  inclusion-filter Sharpe estimates are 0.461, 0.513, and 0.446.}\label{tab:results}
+  inclusion-filter Sharpe estimates are 0.461, 0.513, and 0.446, with
+  corresponding PIT-filtered CIs $[-0.49,1.43]$, $[-0.45,1.58]$, and
+  $[-0.52,1.50]$. The PM decision row is the 5d momentum benchmark; the other
+  horizons are sensitivity evidence.}\label{tab:results}
   \small
   \setlength{\tabcolsep}{4pt}
   \begin{tabular}{llccccc}
@@ -931,8 +941,13 @@ controls roughly 61--62 such symbols appear in hold-out rows that a PIT
 inclusion filter removes. Recomputing the sector-neutral momentum baseline with
 \texttt{sp500\_member\_asof==1} reduces Sharpe from 0.620 to 0.461 at 5d, from
 0.828 to 0.513 at 20d, and from 0.741 to 0.446 at 30d. The 5d annual net return
-falls from 5.86\% to 3.93\%, and max drawdown worsens from -14.6\% to -17.3\%.
-Applying the same 30d filter post-training to the selected Route~B prediction
+falls from 5.86\% to 3.93\%, max drawdown worsens from -14.6\% to -17.3\%, and
+the PIT-filtered 5d Sharpe bootstrap interval is $[-0.49,1.43]$. That interval
+crosses zero even after the optimistic inclusion-side-only filter, so portfolio
+Sharpe is a directional result; the cleaner evidence for keeping the book is
+the 5d traded-horizon IC interval. The PIT-filtered 20d and 30d momentum Sharpe
+intervals are also wide at $[-0.45,1.58]$ and $[-0.52,1.50]$. Applying the same
+30d filter post-training to the selected Route~B prediction
 file and rebuilding the overlay score reduces Sharpe from 0.987 to 0.725,
 annual net return from 8.27\% to 5.69\%, and worsens max drawdown from -7.3\%
 to -10.0\% (\texttt{report/artifacts/pit\_inclusion\_sensitivity/};
@@ -1000,15 +1015,16 @@ discipline is methodological: non-overlapping evaluation, walk-forward
 selection, explicit leakage controls, and a single-factor baseline that every
 model must clear in a clearly specified metric. The realistic conclusion is
 sobering: broad multivariate, graph, MLP, and residual-overlay searches have
-not demonstrated production-grade alpha. Momentum is the only clearly confirmed
-raw factor by 1-day IC confirmation and prior evidence, and the 5-day
-sector-neutral implementation is the most statistically reliable tradable
+not demonstrated production-grade alpha. Momentum is the only raw factor with
+both traded-horizon IC support and corroborating 1-day IC confirmation, and the
+5-day sector-neutral implementation is the most statistically reliable tradable
 benchmark in this study because its traded-horizon IC interval is positive and
 turnover is lowest (Sharpe $0.62$--$0.63$, turnover $0.22$, block-bootstrap IC
 $t=2.41$). But this is not a production-ready endorsement: its own portfolio
 Sharpe is not statistically tight (mean-return $t=1.31$, bootstrap Sharpe CI
 $[-0.32,1.63]$), and the partial PIT inclusion filter cuts the horizon-matched
-5d Sharpe from $0.620$ to $0.461$. Its daily IC confirmation is more robust: a
+5d Sharpe from $0.620$ to $0.461$ with a filtered Sharpe CI of $[-0.49,1.43]$.
+Its daily IC confirmation is more robust: a
 21-day block bootstrap puts the hold-out mean Rank IC CI at $[0.0115,0.0297]$
 and Newey--West lag-21 gives $t=4.39$; the traded-horizon HAC/block evidence is
 positive but only marginal by 20--30 days, where PIT inclusion also cuts

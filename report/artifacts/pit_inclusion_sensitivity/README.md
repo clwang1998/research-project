@@ -18,9 +18,11 @@ inside that filtered cross-section. No model is retrained.
   "holdout_start": "2022-01-01",
   "horizon_days": 30,
   "overlay_lambda": 0.2,
+  "bootstrap_samples_requested": 20000,
+  "seed": 20260621,
   "current_members_added_on_or_after_holdout_start": 72,
   "excluded_holdout_symbols": 61,
   "excluded_holdout_rows_after_baseline_controls": 27291,
-  "note": "PIT inclusion keeps only rows where sp500_member_asof == 1. Overlay figures are post-training sensitivities: predictions are filtered and the selected overlay score is rebuilt on the filtered cross-section, but models are not retrained."
+  "note": "PIT inclusion keeps only rows where sp500_member_asof == 1. Overlay figures are post-training sensitivities: predictions are filtered and the selected overlay score is rebuilt on the filtered cross-section, but models are not retrained. Sharpe intervals are deterministic iid bootstraps of non-overlapping net rebalance returns."
 }
 ```

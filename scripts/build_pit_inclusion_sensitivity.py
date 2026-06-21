@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -49,6 +51,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-names-per-date", type=int, default=100)
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
     parser.add_argument("--sector-neutral", action="store_true", default=True)
+    parser.add_argument("--bootstrap-samples", type=int, default=20000)
+    parser.add_argument("--seed", type=int, default=20260621)
     return parser.parse_args()
 
 
@@ -165,7 +169,45 @@ def eval_overlay(args: argparse.Namespace, membership: pd.DataFrame, require_pit
     return metrics, bt, pred
 
 
-def row(label: str, variant: str, metrics: dict[str, float], frame: pd.DataFrame) -> dict[str, object]:
+def bootstrap_sharpe(
+    returns: np.ndarray, periods_per_year: float, n_boot: int, rng: np.random.Generator
+) -> np.ndarray:
+    x = np.asarray(returns, dtype=float)
+    x = x[np.isfinite(x)]
+    n = len(x)
+    if n < 3:
+        return np.array([])
+    idx = rng.integers(0, n, size=(n_boot, n))
+    samples = x[idx]
+    means = samples.mean(axis=1)
+    vols = samples.std(axis=1, ddof=1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        sharpes = means / vols * math.sqrt(periods_per_year)
+    return sharpes[np.isfinite(sharpes)]
+
+
+def mean_t_stat(returns: np.ndarray) -> float:
+    x = np.asarray(returns, dtype=float)
+    x = x[np.isfinite(x)]
+    if len(x) < 3:
+        return math.nan
+    se = float(x.std(ddof=1) / math.sqrt(len(x)))
+    return float(x.mean() / se) if se > 0 else math.nan
+
+
+def row(
+    label: str,
+    variant: str,
+    metrics: dict[str, float],
+    frame: pd.DataFrame,
+    bt: pd.DataFrame,
+    args: argparse.Namespace,
+    seed_offset: int,
+) -> dict[str, object]:
+    periods_per_year = 252.0 / args.horizon_days
+    returns = bt["net_return"].to_numpy(dtype=float)
+    rng = np.random.default_rng(args.seed + seed_offset)
+    boot = bootstrap_sharpe(returns, periods_per_year, args.bootstrap_samples, rng)
     return {
         "signal": label,
         "universe": variant,
@@ -180,6 +222,12 @@ def row(label: str, variant: str, metrics: dict[str, float], frame: pd.DataFrame
         "ann_return_net": metrics.get("ann_return_net"),
         "max_drawdown_net": metrics.get("max_drawdown_net"),
         "avg_turnover": metrics.get("avg_turnover"),
+        "n_rebalance_periods": int(len(returns)),
+        "mean_return_t_stat": mean_t_stat(returns),
+        "bootstrap_samples": int(len(boot)),
+        "bootstrap_sharpe_ci_2p5": float(np.quantile(boot, 0.025)) if len(boot) else math.nan,
+        "bootstrap_sharpe_ci_97p5": float(np.quantile(boot, 0.975)) if len(boot) else math.nan,
+        "bootstrap_prob_sharpe_positive": float(np.mean(boot > 0.0)) if len(boot) else math.nan,
     }
 
 
@@ -195,10 +243,26 @@ def main() -> None:
     pit_overlay_metrics, pit_overlay_bt, pit_overlay = eval_overlay(args, membership, require_pit=True)
 
     rows = [
-        row("momentum", "current_membership", current_mom_metrics, current_mom),
-        row("momentum", "pit_inclusion", pit_mom_metrics, pit_mom),
-        row("route_b_overlay", "current_membership_post_training", current_overlay_metrics, current_overlay),
-        row("route_b_overlay", "pit_inclusion_post_training", pit_overlay_metrics, pit_overlay),
+        row("momentum", "current_membership", current_mom_metrics, current_mom, current_mom_bt, args, 0),
+        row("momentum", "pit_inclusion", pit_mom_metrics, pit_mom, pit_mom_bt, args, 1),
+        row(
+            "route_b_overlay",
+            "current_membership_post_training",
+            current_overlay_metrics,
+            current_overlay,
+            current_overlay_bt,
+            args,
+            2,
+        ),
+        row(
+            "route_b_overlay",
+            "pit_inclusion_post_training",
+            pit_overlay_metrics,
+            pit_overlay,
+            pit_overlay_bt,
+            args,
+            3,
+        ),
     ]
     summary = pd.DataFrame(rows)
     summary.to_csv(out_dir / "pit_inclusion_summary.csv", index=False)
@@ -221,13 +285,16 @@ def main() -> None:
         "holdout_start": args.holdout_start,
         "horizon_days": args.horizon_days,
         "overlay_lambda": args.overlay_lambda,
+        "bootstrap_samples_requested": args.bootstrap_samples,
+        "seed": args.seed,
         "current_members_added_on_or_after_holdout_start": companies_added_2022_plus,
         "excluded_holdout_symbols": int(excluded["symbol"].nunique()),
         "excluded_holdout_rows_after_baseline_controls": int(len(excluded)),
         "note": (
             "PIT inclusion keeps only rows where sp500_member_asof == 1. "
             "Overlay figures are post-training sensitivities: predictions are filtered and the "
-            "selected overlay score is rebuilt on the filtered cross-section, but models are not retrained."
+            "selected overlay score is rebuilt on the filtered cross-section, but models are not retrained. "
+            "Sharpe intervals are deterministic iid bootstraps of non-overlapping net rebalance returns."
         ),
     }
     (out_dir / "run_summary.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
