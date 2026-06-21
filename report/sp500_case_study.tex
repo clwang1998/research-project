@@ -552,18 +552,23 @@ with standalone momentum and the strongest plain 30d sector model on the
 relative to momentum (Sharpe $0.74 \rightarrow 0.99$, max drawdown
 $-13.8\% \rightarrow -7.3\%$), but the evidence is deliberately read
 conservatively: the sample has only $N=35$ non-overlapping periods, the
-bootstrap Sharpe CI is $[0.019,1.796]$, full-grid DSR is $0.003$, PBO is
-50\%, and the Rank IC change is within evaluator noise. The plain 30d LightGBM
-row shows why horizon framing matters: a raw model can beat the overlay's
-Sharpe point estimate, but with higher turnover and no Route~B deflation audit
-in this report.
+bootstrap Sharpe CI is $[0.019,1.796]$, full-grid DSR is $0.003$ after 884
+searched trials, PBO is 50\%, and the Rank IC change is within evaluator noise.
+The plain 30d LightGBM row shows why horizon framing matters: a raw model can
+beat the overlay's Sharpe point estimate, but the overlay is kept only for its
+economic sleeve role and lower turnover, not for raw performance dominance. The
+plain 30d models are not given the same DSR/PBO charge here because their
+per-period prediction/backtest artifacts are not archived with the Route~B
+audit.
 
 \begin{table}[H]
   \centering
   \caption{30-day sector-relative hold-out comparison, net of 5~bps/side cost.
   Route~B has $N=35$ non-overlapping periods; its bootstrap Sharpe CI is
-  $[0.019,1.796]$, full-grid DSR is $0.003$, and CSCV PBO is 50\%. The model is
-  a candidate residual sleeve, not a replacement for momentum.}\label{tab:route_b_30d}
+  $[0.019,1.796]$, full-grid DSR is $0.003$ over 884 searched trials
+  (same-target DSR $0.814$ over 14 trials), and CSCV PBO is 50\%. The model is
+  a candidate residual sleeve, not a replacement for momentum; overlay IC/ICIR
+  is cross-convention and read only as approximately unchanged.}\label{tab:route_b_30d}
   \scriptsize
   \setlength{\tabcolsep}{3pt}
   \begin{tabular}{lccccccc}
@@ -572,7 +577,7 @@ in this report.
     \midrule
     Momentum baseline & canonical baseline & 0.0282 & 0.698 & 0.740 & 7.78\% & -13.83\% & \textbf{0.401} \\
     Plain LightGBM model & horizon comparison & 0.0362 & 0.802 & \textbf{1.226} & \textbf{12.95\%} & -8.16\% & 0.631 \\
-    Route B overlay, $\lambda=0.2$ & val-selected sleeve & $\approx$0.028 & 0.768 & 0.987 & 8.27\% & \textbf{-7.32\%} & 0.494 \\
+    Route B overlay, $\lambda=0.2$ & val-selected sleeve & $\approx$0.028 & $\approx$0.77 & 0.987 & 8.27\% & \textbf{-7.32\%} & 0.494 \\
     Route B overlay, $\lambda=0.3$ & diagnostic only & 0.0280 & \textbf{0.806} & 1.201 & 9.98\% & -6.10\% & 0.521 \\
     \bottomrule
   \end{tabular}
@@ -588,8 +593,11 @@ audit CSV uses a different score/label convention for the raw Rank IC column
 and reports negative baseline/overlay ICs even when the economic rows match.
 I therefore use the canonical evaluator for the Table~\ref{tab:route_b_30d}
 momentum Rank IC and treat the overlay's IC as approximately unchanged rather
-than claiming exact IC traceability. The weakness is both statistical deflation
-and rank-IC convention alignment; the economic comparison remains reproducible.
+than claiming exact IC traceability. Under the audit convention the overlay
+Rank IC is $-0.0083$ versus the baseline's $-0.0105$, so the overlay changes
+rank information by only about $+0.002$ even before considering estimator
+noise. The weakness is both statistical deflation and rank-IC convention
+alignment; the economic comparison remains reproducible.
 
 \textbf{Momentum/reversal sleeve-book diagnostic.} The next product-style
 check built the two-sleeve book implied by the frequency scan: momentum plus
@@ -654,11 +662,11 @@ DSR and PBO still force an exploratory interpretation
     \midrule
     Test Sharpe before deflation & 0.987 & Better than 30d momentum's 0.740, before selection correction. \\
     Bootstrap Sharpe 95\% CI & [0.019, 1.796] & Positive but wide. \\
-    DSR, same-target trials & 0.814 & Encouraging within the narrow 30d target search. \\
-    DSR, full grid trials & 0.003 & Fragile if charged for the broader experiment zoo. \\
+    DSR, same-target trials & 0.814 & Encouraging within the 14-trial 30d target search. \\
+    DSR, full grid trials & 0.003 & 0.987 Sharpe is below the 884-trial expected-max null of 1.512. \\
     CSCV PBO & 50.0\% & High overfit risk across 28 compact Route~B strategies. \\
     Fama--MacBeth signal $t$-stat & 0.05 & No convincing independent residual-alpha coefficient. \\
-    Factor-neutral Sharpe & 1.006 & Non-informative without a supporting FM coefficient; possible noise/risk timing. \\
+    Factor-neutral Sharpe & 1.006 & Return falls 8.27\%$\rightarrow$5.17\%; turnover rises 0.49$\rightarrow$0.70. \\
     Capacity Sharpe at \$100M / \$1B & 0.948 / 0.864 & Capacity is plausible at modest scale; participation rises at \$1B. \\
     Survivorship stress-haircut Sharpe & 0.837 & Sensitivity does not destroy the result, but remains uncorrected. \\
     \bottomrule
@@ -726,7 +734,9 @@ passed the Route~B deflation/attribution audit.
   \texttt{eval\_momentum\_baseline.py}; model rows are the walk-forward
   validation selections in \texttt{docs/horizon\_comparison.md}. Parenthetical
   ICIR is the naive overlapping value, shown only to document inflation. Best per
-  block in \textbf{bold}.}\label{tab:results}
+  block in \textbf{bold}; the 20d block is market-relative because that was the
+  best archived validation family for the model comparison, while 5d/30d use the
+  sector-relative production benchmark.}\label{tab:results}
   \small
   \setlength{\tabcolsep}{4pt}
   \begin{tabular}{llccccc}
@@ -770,10 +780,11 @@ hidden, with the Sharpe$>3$/ICIR$>5$ gate catching anything ``too good''.
 Sharpe must be treated as a selected maximum, not as a single pre-specified
 experiment. For the Route~B 30-day overlay, raw hold-out Sharpe is 0.987 and the
 bootstrap 95\% Sharpe interval is $[0.019,1.796]$. The same-target DSR is 0.814,
-but full-grid DSR falls to 0.003 and CSCV PBO is 50\%. This is the most
-important statistical conclusion: the overlay is a materially better research
-lead than the old graph/MLP direction, but still not a statistically deflated
-production alpha. The separate factor-sleeve book is even weaker: after charging
+but full-grid DSR falls to 0.003 because the 884-trial expected-max null Sharpe
+is 1.512, above the observed 0.987; CSCV PBO is 50\%. This is the most important
+statistical conclusion: the overlay is a materially better research lead than
+the old graph/MLP direction, but still not a statistically deflated production
+alpha. The separate factor-sleeve book is even weaker: after charging
 the 12 pre-registered single-factor trials, the combined momentum/reversal book
 has DSR 0.056 and a bootstrap Sharpe interval that crosses zero. It is useful as
 a falsification exercise, not as a new product claim.
@@ -792,11 +803,12 @@ fundamental value/quality factors, but we can still neutralize the final signal
 against available style proxies: liquidity/size
 (\texttt{log\_dollar\_volume}), volatility (\texttt{vol\_20d}), beta
 (\texttt{beta\_60d}), Amihud illiquidity, short-term reversal
-(\texttt{ret\_5d}), and 12--1 momentum. The Route~B overlay keeps attractive
-economics under this proxy score-neutralization, but the non-overlapping
-Fama--MacBeth signal coefficient has only $t=0.05$. The evidence therefore
-supports an economically interesting residual sleeve, not a clean claim of
-independent style-neutral alpha.
+(\texttt{ret\_5d}), and 12--1 momentum. The Route~B overlay's score-neutralized
+Sharpe remains near 1.0, but that is not evidence of orthogonal alpha by itself:
+annual return falls from 8.27\% to 5.17\%, turnover rises from 0.49 to 0.70, and
+the non-overlapping Fama--MacBeth signal coefficient has only $t=0.05$. The
+evidence therefore supports an economically interesting residual sleeve, not a
+clean claim of independent style-neutral alpha.
 
 \textbf{Look-ahead leakage.} Addressed structurally: one-day execution lag,
 label purge on both sides, horizon embargo, and train-only preprocessing. We
@@ -813,19 +825,12 @@ a stress case (5\%, $-50\%$). This bound is still not a true correction; the
 right fix is point-in-time constituents and delisting returns.
 
 \textbf{Kronos and survivorship bias.} Kronos is not used as a reported alpha
-model in this paper. Its relevant role is as a possible remedy for the
-survivorship-bias problem: a market time-series foundation model pretrained on
-large-scale OHLCV sequences can learn reusable price-volume representations
-across many instruments and regimes, then be fine-tuned or used to generate
-embeddings for securities outside the current S\&P~500 membership. In a
-production-grade extension, the training data would be a point-in-time universe
-including delisted, acquired, and index-deleted names, with split-adjusted and
-dividend-adjusted OHLCV and delisting returns. The process would pretrain or
-load the sequence model, fine-tune only on pre-split history, and generate
-embeddings or forecasts for each walk-forward date without seeing future
-membership. I therefore treat Kronos as a candidate route to broaden the
-investable universe and reduce current-constituent survivorship bias, not as
-empirical evidence in the results above.
+model in this paper. Its relevant role is only as a possible future data-universe
+route: a sequence model trained on a point-in-time universe with delisted,
+acquired, and index-deleted names could generate price-volume embeddings beyond
+the current S\&P~500 membership. I therefore treat Kronos as a candidate way to
+broaden the investable universe and reduce current-constituent survivorship
+bias, not as empirical evidence in the results above.
 
 \textbf{Data quality.} Prices are split-adjusted; dividend adjustment is
 uncertain and treated as a minor caveat. We winsorize features and filter the
