@@ -1,0 +1,12 @@
+{
+  "signal_col": "cs_rank_mom_252d_skip_21d",
+  "holdout_start": "2022-01-01",
+  "sector_neutral": true,
+  "bootstrap_samples_requested": 20000,
+  "seed": 20260621,
+  "horizons": [
+    5,
+    20,
+    30
+  ]
+}
