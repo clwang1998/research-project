@@ -44,9 +44,9 @@ macro factors that daily OHLCV data cannot forecast, whereas the
 learnable from price and volume alone.
 
 We therefore predict each stock's forward return \emph{in excess of its market
-and sector}, convert model predictions into a validation-selected ensemble
-score, and then use that score in explicitly specified portfolio tests. The
-primary trading evaluation is a cost-adjusted, sector-neutral decile long--short
+and sector}, first test validation-selected model ensembles, and then use the
+same machinery to build a narrower momentum-plus-residual overlay. The primary
+trading evaluation is a cost-adjusted, sector-neutral decile long--short
 portfolio: within each sector, long the top-scored stocks and short the
 bottom-scored stocks, then combine sectors into a dollar-neutral book. The
 entire pipeline is built to be honest about look-ahead leakage, overlapping-window
@@ -56,12 +56,14 @@ mistake.
 
 \textbf{Headline design.} Curated technical/liquidity/cross-sectional features
 $\rightarrow$ sector- and market-relative forward-return targets $\rightarrow$ a
-single-factor momentum baseline, Ridge, LightGBM, XGBoost, MLP, and supervised
-relation-aware graph variants $\rightarrow$ validation-selected cross-sectional
-rank ensembles $\rightarrow$ rank IC / ICIR, regime stability, and
-transaction-cost-aware portfolio backtests. The headline horizon is the
-5-trading-day relative return, with the 10-trading-day sector-neutral portfolio
-used as the main risk-adjusted robustness case.
+single-factor momentum baseline $\rightarrow$ compact Ridge/XGBoost models
+trained on factor-neutral residual labels $\rightarrow$ a validation-selected
+momentum-plus-residual overlay $\rightarrow$ rank IC / ICIR, DSR/PBO,
+style-neutral attribution, capacity, and cost-aware portfolio backtests. The
+headline result is no longer a graph or MLP claim: it is a 30-trading-day
+sector-neutral residual overlay that improves hold-out Sharpe and drawdown
+versus standalone momentum, while still failing the strict full-grid
+multiple-testing hurdle.
 
 % ===========================================================================
 \section{Data}
@@ -175,7 +177,7 @@ therefore sum to about one up to floating-point error; for each stock-date they
   targets, folds, models, costs, purge/embargo, and hold-out protocol.
 
 We explicitly verified that the expected factor families are present:
-12-minus-1-month momentum (\texttt{mom\_252d\_skip\_21d}), short-term reversal
+12-minus-1-month momentum (\texttt{mom\_252d\_}\allowbreak\texttt{skip\_21d}), short-term reversal
 (\texttt{rev\_*}), volatility/range estimators, Bollinger features,
 \texttt{MACD}, RSI-style oscillators, Amihud illiquidity, and
 date/sector/sub-industry z-score and rank transforms. The short-cycle feature
@@ -221,8 +223,9 @@ strictly excluded from the feature matrix. The target generator also writes a
 date-wise percentile-rank target, \texttt{target\_rank\_fwd\_}h\texttt{d}, so
 short-horizon experiments can use volatility-normalized, ranked, or winsorized
 labels when raw returns are too noisy. The implemented horizon grid covers
-$h\in\{1,5,10,20,30,40,50,60,70,80,90\}$; this report emphasizes 5d for the
-main rank test and 10d for the sector-neutral risk-adjusted portfolio test.
+$h\in\{1,5,10,20,30,40,50,60,70,80,90\}$. The original broad search emphasized
+5d/10d, but the final Route~B rerun uses the 30d sector-relative horizon because
+the shorter horizons did not deliver reliable net economics after costs.
 
 \textbf{Execution timing.} The raw target columns are generated on each feature
 date, but the model is evaluated with a one-day implementation lag. A feature row
@@ -257,11 +260,21 @@ score, and the final overlay signal is
   s_{i,t}=z(\text{momentum}_{i,t})+\lambda z(\widehat{\varepsilon}_{i,t}),
 \]
 where $\widehat{\varepsilon}_{i,t}$ is the model component orthogonal to
-momentum within that day's cross-section. The grid evaluates
-$\lambda\in\{0,0.25,0.5,0.75,1,1.5\}$, with $\lambda{=}0$ reproducing the
-momentum baseline. The overlay is selected on validation ICIR and net portfolio
-metrics only, so the test split is not used to tune the amount of residual ML
-alpha.
+momentum within that day's cross-section. The overlay weight is selected from a
+small pre-registered grid on validation net portfolio metrics, with
+$\lambda{=}0$ reproducing the momentum baseline. The final Route~B run selects
+$\lambda{=}0.2$ on validation Sharpe; the test split is not used to tune the
+amount of residual ML alpha.
+
+\textbf{Route B residual-target training.} After the broad model/graph search
+failed to produce a robust replacement for momentum, I reran the main experiment
+with a narrower design: each effective forward label is residualized
+cross-sectionally by date against sector dummies and OHLCV style proxies
+(liquidity, volatility, beta/idiosyncratic volatility, short-term reversal,
+12--1 momentum, overnight/intraday return, volume shock, breadth and dispersion).
+Ridge/XGBoost then train on this residual target. The final tradable signal is
+still evaluated on raw forward returns and is combined with the momentum
+baseline as a small residual sleeve rather than a replacement.
 
 \textbf{Graph feature variants.} Graph features are predictive inputs, not
 separate trading rules. The \texttt{fixed\_graph} variant is the original
@@ -386,9 +399,10 @@ participate in feature, model, hyperparameter, ensemble-member, or weight
 selection.
 
 \subsection{Portfolio and metrics}
-On each rebalance date we sort stocks by the final ensemble score from
-\S\ref{sec:ensemble}. Portfolio construction is deliberately written as a ladder
-from simple to stringent:
+On each rebalance date we sort stocks by the reported score, either the
+validation-selected ensemble from \S\ref{sec:ensemble} or the final Route~B
+momentum-plus-residual overlay. Portfolio construction is deliberately written
+as a ladder from simple to stringent:
 \begin{itemize}
   \item \textbf{Long-only top bucket:} hold the top decile, either equal-weighted
   or score-weighted, with no short book. This is closest to a constrained
@@ -440,10 +454,10 @@ Table~\ref{tab:ensemble} contain the tabular and all-relation supervised-GAT run
 for Ridge, LightGBM, XGBoost, and MLP, then construct the five
 validation-selected rank ensembles in \S\ref{sec:ensemble}.
 The fixed graph embedding is therefore documented as a model variant, but not
-included in this headline table unless its corresponding archived metrics are
-present. Table~\ref{tab:ensemble} reports the headline sector-relative 5-day test
-split using the primary sector-neutral long--short decile portfolio, net of
-5~bps per-side cost. Excluding MLP improves the
+included in this diagnostic table unless its corresponding archived metrics are
+present. Table~\ref{tab:ensemble} reports the sector-relative 5-day ensemble
+diagnostic on the test split using the primary sector-neutral long--short decile
+portfolio, net of 5~bps per-side cost. Excluding MLP improves the
 post-validation rank IC and net Sharpe relative to the full ensemble, and the
 supervised-graph tree ensemble is the strongest ranker among these 5-day
 ensembles; however, turnover remains high and economic performance is only weakly
@@ -479,7 +493,7 @@ Ridge, LightGBM, and XGBoost.
 \textbf{The decisive test: the untouched hold-out.} The validation ranking does
 not survive out of sample. On the 2022--2026 hold-out the \emph{single-factor
 momentum baseline} (rank by 12-minus-1-month momentum, no fitting) beats every
-trained multivariate model at the headline 5-day horizon --- higher rank IC
+trained multivariate model at the original 5-day benchmark horizon --- higher rank IC
 ($0.024$ vs $\le 0.013$), higher ICIR ($1.06$ vs $\le 0.73$), higher net Sharpe
 ($1.05$ vs $\le 0.53$), and roughly one-quarter the turnover ($0.16$ vs
 $\sim 0.59$); the same ordering holds at 20 days (Table~\ref{tab:results}). The
@@ -487,49 +501,138 @@ models' validation-IC edge is therefore largely overfit: a robust, low-turnover
 factor is hard to beat after costs. This is the central, deliberately humbling
 finding of the study.
 
-\textbf{10-day sector-neutral risk-adjusted case.} The strongest positive result
-is not a raw rank-IC victory at 5 days; it is the 10-day sector-neutral
-risk-adjusted portfolio. Table~\ref{tab:sector10} reports the implemented 10d
-sector-relative runs on the same 2022--2026 hold-out. Momentum still has the
-highest mean rank IC among these rows, but the graph/tree model improves the
-economic profile: XGBoost with supervised graph features has lower rank IC
-($0.0239$ vs $0.0271$) but a higher net Sharpe ($1.16$ vs $0.75$) and a much
-smaller drawdown ($-6.1\%$ vs $-14.6\%$). The archived fixed-graph XGBoost run
-shows the same pattern even more clearly on ICIR and Sharpe. This is why the
-10d sector result is reported as an ICIR/Sharpe/drawdown improvement rather than
-as a mean-rank-IC win. We still avoid a broad graph-learning claim unless the
-relation ablations beat random and no-edge placebos.
+\textbf{Route B 30-day residual overlay.} The final positive result comes from
+the narrower residual-target rerun, not from the graph/MLP zoo. XGBoost is
+trained on 30-day sector-relative labels after daily ridge residualization
+against sector and OHLCV style proxies. The tradable score is then
+$z(\text{momentum})+0.2z(\text{residual XGBoost})$, with $\lambda=0.2$ selected
+on validation Sharpe. Table~\ref{tab:route_b_30d} compares this Route~B overlay
+with standalone momentum on the 2022--2026 hold-out. The overlay only slightly
+improves raw Rank IC, but it materially improves the economic profile: Sharpe
+increases from $0.74$ to $0.97$ and max drawdown falls from $-13.8\%$ to
+$-7.0\%$. Turnover rises, so capacity remains part of the risk budget.
 
 \begin{table}[H]
   \centering
-  \caption{10-day sector-relative hold-out comparison, net of 5~bps/side cost.
-  The positive result is risk-adjusted: model rows improve Sharpe and drawdown
-  more clearly than mean rank IC.}\label{tab:sector10}
+  \caption{Route B 30-day sector-relative hold-out comparison, net of
+  5~bps/side cost. The model is not a replacement for momentum; it is a small
+  residual sleeve added to it.}\label{tab:route_b_30d}
   \small
   \setlength{\tabcolsep}{4pt}
-  \begin{tabular}{lccccc}
+  \begin{tabular}{lcccccc}
     \toprule
-    Config & Rank IC & ICIR & Net Sharpe & Ann.\ Ret & Max DD \\
+    Config & Rank IC & ICIR & Net Sharpe & Ann.\ Ret & Max DD & Turnover \\
     \midrule
-    Momentum baseline & \textbf{0.0271} & 0.812 & 0.746 & 7.05\% & -14.59\% \\
-    XGBoost fixed graph & 0.0250 & \textbf{0.909} & 1.116 & 8.08\% & \textbf{-5.18\%} \\
-    XGBoost supervised graph & 0.0239 & 0.801 & \textbf{1.163} & \textbf{8.15\%} & -6.11\% \\
-    Tree ensemble, no MLP & 0.0238 & 0.845 & 0.970 & 5.91\% & -7.28\% \\
+    Momentum baseline & 0.0282 & 0.698 & 0.740 & 7.78\% & -13.83\% & \textbf{0.401} \\
+    Route B overlay, $\lambda=0.2$ & \textbf{0.0283} & 0.768 & \textbf{0.970} & \textbf{8.08\%} & \textbf{-6.96\%} & 0.492 \\
+    Route B overlay, $\lambda=0.3$ diagnostic & 0.0280 & \textbf{0.806} & 1.201 & 9.98\% & -6.10\% & 0.521 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-\textbf{PM-level robustness audit.} The 10-day residual overlay is the best
-research lead, but it is \emph{not} strong enough to present as a production
-alpha. A post-training audit treats the full search as multiple testing, applies
-CSCV/PBO, neutralizes the final score against available style proxies, and
-stresses capacity and survivorship. The result is sobering:
-raw hold-out Sharpe is attractive, but deflated Sharpe is not significant and
-the factor-neutral economics are much weaker (Table~\ref{tab:p0audit}).
+\textbf{Earlier 10-day overlay diagnostic.} Before the Route~B residual-target
+rerun, the best-looking result was an incremental 10-day overlay on top of
+momentum. Table~\ref{tab:residual_overlay} is kept as a diagnostic because it
+motivated the final design: do not replace momentum; add only a controlled
+residual sleeve. It is no longer the headline result because the later P0 audit
+shows it does not survive multiple-testing and proxy factor-attribution checks.
 
 \begin{table}[H]
   \centering
-  \caption{P0 robustness audit for the 10-day residual momentum overlay. DSR is
+  \caption{Earlier 10-day sector-relative residual overlay on the 2022--2026
+  hold-out. This diagnostic motivated Route~B but is not the final headline.}
+  \label{tab:residual_overlay}
+  \scriptsize
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    Signal & Rank IC & ICIR & Net Sharpe & Ann.\ Ret & Max DD & Turnover \\
+    \midrule
+    Momentum baseline & 0.0271 & 0.812 & 0.746 & 7.05\% & -14.59\% & 0.278 \\
+    Residual overlay, validation-selected & 0.0292 & 0.912 & 0.995 & 8.29\% & -12.26\% & 0.368 \\
+    Residual overlay, $\lambda=1$ diagnostic & 0.0332 & 1.205 & 1.297 & 9.44\% & -7.60\% & 0.509 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\textbf{Graph relation ablation.} The graph component was also tested as a
+proper relation ablation rather than accepted because a graph model looked good
+in isolation. The completed 120-candidate tree grid compares real relation
+families (sector, style-nearest-neighbor, rolling correlation, and all
+relations) against random-edge and no-edge controls for 5d/10d sector- and
+market-relative targets. Table~\ref{tab:graph_ablation} reports the best real
+relation and the strongest placebo/control in each target block. The result is
+mostly negative: real relations do not consistently beat random or no-edge
+controls, so graph learning is treated as an experimental feature family, not
+as a headline source of alpha.
+
+\begin{table}[H]
+  \centering
+  \caption{Graph relation ablation summary. ICIR is the overlap-adjusted
+  hold-out rank-IC information ratio for the best tree/Ridge candidate in each
+  block.}
+  \label{tab:graph_ablation}
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{p{0.13\linewidth}p{0.21\linewidth}rp{0.21\linewidth}rp{0.25\linewidth}}
+    \toprule
+    Target & Best real relation & ICIR & Best control & ICIR & Read-through \\
+    \midrule
+    Sector 5d & style kNN / XGBoost & 0.765 & random / XGBoost & 0.898 &
+    Placebo control wins; no graph-edge claim. \\
+    Market 5d & all relations / Ridge & 0.505 & random / Ridge & 0.523 &
+    Placebo control wins on ICIR. \\
+    Sector 10d & style kNN / LightGBM & 0.812 & random / XGBoost & 0.932 &
+    Real edges do not beat the random control. \\
+    Market 10d & style kNN / XGBoost & 0.443 & random / Ridge & 0.430 &
+    Real relation narrowly wins, but remains below the momentum ICIR. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\textbf{Failed ablations and negative controls.} Several implemented variants
+are deliberately kept in the paper as negative evidence (Table
+\ref{tab:negative_ablations}). This matters because the search did not simply
+choose the best-looking row and hide the rest: seed-bagging fixed-graph trees
+increased turnover and underperformed momentum, and Kaggle/Ubiquant-style
+date-aggregate features did not repair the short-horizon signal.
+
+\begin{table}[H]
+  \centering
+  \caption{Negative ablations retained in the research record. These variants
+  are not promoted to the final model because they fail the same hold-out and
+  benchmark tests.}
+  \label{tab:negative_ablations}
+  \scriptsize
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{p{0.27\linewidth}p{0.36\linewidth}p{0.28\linewidth}}
+    \toprule
+    Experiment & Hold-out result & Interpretation \\
+    \midrule
+    24-member fixed-graph tree seed ensemble &
+    Rank IC 0.0171, ICIR 0.517, Sharpe 0.290, turnover 0.649 &
+    Seed-bagging reduces variance in form, but does not beat the low-turnover
+    momentum baseline. \\
+    Kaggle/Ubiquant-style date aggregates &
+    Best sector 5d test ICIR 0.569, below the momentum ICIR of 1.016 &
+    Cross-sectional date-level aggregates are not enough to stabilize the 5d
+    ML signal. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\textbf{PM-level robustness audit.} The Route~B 30-day overlay is the best
+current research lead, but it is still \emph{not} a production-grade alpha
+claim. A post-training audit treats the full search as multiple testing, applies
+CSCV/PBO, neutralizes the final score against available style proxies, and
+stresses capacity and survivorship. The result is mixed: hold-out economics are
+better than momentum, and the same-target DSR is encouraging, but the full-grid
+DSR and PBO still force an exploratory interpretation
+(Table~\ref{tab:p0audit}).
+
+\begin{table}[H]
+  \centering
+  \caption{P0 robustness audit for the Route B 30-day residual momentum overlay. DSR is
   the probabilistic Sharpe ratio after deflating for the expected best result
   across the searched configurations; PBO is CSCV probability of backtest
   overfitting.}\label{tab:p0audit}
@@ -539,15 +642,15 @@ the factor-neutral economics are much weaker (Table~\ref{tab:p0audit}).
     \toprule
     Check & Result & Interpretation \\
     \midrule
-    Test Sharpe before deflation & 0.989 & Better than momentum's 0.746, before selection correction. \\
-    Bootstrap Sharpe 95\% CI & [-0.066, 2.007] & Interval crosses zero. \\
-    DSR, same-target trials & 0.0247 & Not significant after 196 same-target trials. \\
-    DSR, full grid trials & 0.00025 & Best-looking result is fragile after 828 trial rows. \\
-    CSCV PBO & 34.3\% & Moderate overfit risk across 126 strategies. \\
-    Factor-neutral Sharpe & 0.433 & Most economics disappear after proxy style neutralization. \\
-    Fama--MacBeth signal $t$-stat & -0.08 & No independent residual-alpha evidence. \\
-    Capacity Sharpe at \$100M / \$1B & 0.902 / 0.713 & Impact stress is tolerable only at smaller scale. \\
-    Survivorship stress-haircut Sharpe & 0.839 & Sensitivity does not destroy the result, but remains uncorrected. \\
+    Test Sharpe before deflation & 0.987 & Better than 30d momentum's 0.740, before selection correction. \\
+    Bootstrap Sharpe 95\% CI & [0.019, 1.796] & Positive but wide. \\
+    DSR, same-target trials & 0.814 & Encouraging within the narrow 30d target search. \\
+    DSR, full grid trials & 0.003 & Fragile if charged for the broader experiment zoo. \\
+    CSCV PBO & 50.0\% & High overfit risk across 28 compact Route~B strategies. \\
+    Factor-neutral Sharpe & 1.006 & Economics survive proxy score-neutralization, but attribution is weak. \\
+    Fama--MacBeth signal $t$-stat & 0.05 & No convincing independent residual-alpha coefficient. \\
+    Capacity Sharpe at \$100M / \$1B & 0.948 / 0.864 & Capacity is plausible at modest scale; participation rises at \$1B. \\
+    Survivorship stress-haircut Sharpe & 0.837 & Sensitivity does not destroy the result, but remains uncorrected. \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -593,7 +696,7 @@ test, while 2008 is covered only by the broader walk-forward stability analysis.
   \end{minipage}\hfill
   \begin{minipage}{0.49\textwidth}\centering
     \includegraphics[width=\linewidth]{fig_fold_stability.pdf}
-    \caption{Walk-forward per-fold ICIR for the headline run.}\label{fig:stability}
+    \caption{Walk-forward per-fold ICIR for the short-horizon model-comparison run.}\label{fig:stability}
   \end{minipage}
 \end{figure}
 
@@ -635,11 +738,11 @@ edge does not translate into out-of-sample value here.
 
 \textbf{Overfitting and the validation--hold-out gap.} The clearest evidence of
 overfitting is in the results themselves: models selected on validation ICIR
-fail to beat a single momentum factor on the headline 5-day raw rank test, and
+fail to beat a single momentum factor on the original 5-day raw rank benchmark, and
 the model with the best validation ICIR (the MLP) is not the best economic
-hold-out model. The 10-day sector-neutral result is more favorable to tree/graph
-models on Sharpe and drawdown, but that is a risk-adjusted win, not a blanket
-claim that ML dominates momentum on mean rank IC. We use heavy regularization
+hold-out model. The final 30-day Route~B rerun improves the momentum book only
+after the ML component is constrained to a residual sleeve; standalone residual
+models still have weak economics and high turnover. We use heavy regularization
 (Ridge penalty, tree depth/leaf/subsample limits, MLP dropout + weight decay +
 early stopping), select hyperparameters on validation folds only, and report a
 single untouched hold-out precisely so this gap is \emph{visible} rather than
@@ -647,24 +750,23 @@ hidden, with the Sharpe$>3$/ICIR$>5$ gate catching anything ``too good''.
 
 \textbf{Multiple testing.} The original grid is large enough that the best
 Sharpe must be treated as a selected maximum, not as a single pre-specified
-experiment. For the 10-day residual overlay, raw hold-out Sharpe is 0.989 and
-the probabilistic Sharpe ratio versus zero is essentially one; however, the
-bootstrap 95\% Sharpe interval is $[-0.066,2.007]$. After deflating for the
-searched configurations, DSR falls to 0.0247 using only same-target trials and
-0.00025 using the full grid. CSCV across the overnight strategy matrix gives
-PBO $=34.3\%$. This is the most important statistical conclusion: the overlay
-is a promising research lead, but not a statistically deflated production alpha.
+experiment. For the Route~B 30-day overlay, raw hold-out Sharpe is 0.987 and the
+bootstrap 95\% Sharpe interval is $[0.019,1.796]$. The same-target DSR is 0.814,
+but full-grid DSR falls to 0.003 and CSCV PBO is 50\%. This is the most
+important statistical conclusion: the overlay is a materially better research
+lead than the old graph/MLP direction, but still not a statistically deflated
+production alpha.
 
 \textbf{Factor attribution.} The dataset lacks a full commercial risk model and
 fundamental value/quality factors, but we can still neutralize the final signal
 against available style proxies: liquidity/size
 (\texttt{log\_dollar\_volume}), volatility (\texttt{vol\_20d}), beta
 (\texttt{beta\_60d}), Amihud illiquidity, short-term reversal
-(\texttt{ret\_5d}), and 12--1 momentum. This proxy factor-neutral overlay keeps
-some rank information (rank IC $0.021$), but net Sharpe drops from 0.989 to
-0.433 and the non-overlapping Fama--MacBeth signal coefficient has
-$t=-0.08$. The evidence therefore does not support a claim of independent
-style-neutral alpha.
+(\texttt{ret\_5d}), and 12--1 momentum. The Route~B overlay keeps attractive
+economics under this proxy score-neutralization, but the non-overlapping
+Fama--MacBeth signal coefficient has only $t=0.05$. The evidence therefore
+supports an economically interesting residual sleeve, not a clean claim of
+independent style-neutral alpha.
 
 \textbf{Look-ahead leakage.} Addressed structurally: one-day execution lag,
 label purge on both sides, horizon embargo, and train-only preprocessing. We
@@ -675,7 +777,7 @@ controls bind.
 results are optimistically biased and cannot be treated as a production backtest.
 The audit adds a numeric sensitivity rather than only a caveat: applying a
 delisting overlay of annual delisting rate $\times$ average delisting loss to
-the short-side exposure leaves the residual overlay Sharpe at 0.953 in a base
+the short-side exposure leaves the Route~B overlay Sharpe at 0.951 in a base
 case (2\% annual delisting rate, $-30\%$ average delisting return) and 0.839 in
 a stress case (5\%, $-50\%$). This bound is still not a true correction; the
 right fix is point-in-time constituents and delisting returns.
@@ -691,12 +793,12 @@ illiquid decile so bad ticks and microcaps do not dominate.
 
 \textbf{Turnover, capacity, and market impact.} We charge 5~bps per side on
 realized turnover and rebalance only every $h$ days. Turnover is itself
-decisive: the trained models churn $\sim$60\% per rebalance versus
-$\sim$16--28\% for the momentum benchmark, and the residual overlay turns over
-36.8\%. A simple square-root impact stress test, calibrated to 10~bps at 1\%
-ADV participation, gives overlay Sharpe 0.902 at \$100M AUM, 0.794 at \$500M,
-and 0.713 at \$1B, with 95th percentile participation rising to 24.5\% at
-\$1B. This is not an execution model, but it is enough to show that capacity and
+decisive: the trained residual models churn $\sim$75--85\% per rebalance, while
+the Route~B overlay turns over 49.2\% versus 40.1\% for the 30-day momentum
+benchmark. A simple square-root impact stress test, calibrated to 10~bps at
+1\% ADV participation, gives overlay Sharpe 0.948 at \$100M AUM, 0.900 at
+\$500M, and 0.864 at \$1B, with 95th percentile participation rising to 25.3\%
+at \$1B. This is not an execution model, but it is enough to show that capacity and
 short-side liquidity are first-order constraints.
 
 \textbf{Regime dependence.} Walk-forward folds span 2008, 2020, and 2022 stress
@@ -707,8 +809,8 @@ single static model.
 \textbf{Economic intuition.} The one signal that clearly survives out of sample
 is cross-sectional momentum --- a well-documented behavioural underreaction
 effect --- which is precisely why the single-factor baseline is so hard to beat.
-The multivariate models mostly add estimation variance, not orthogonal signal,
-on top of it.
+The Route~B result is useful because it gives the model a narrower economic job:
+find residual structure that can be added to, not substituted for, momentum.
 
 % ===========================================================================
 \section{Limitations and Conclusion}
@@ -719,15 +821,14 @@ pipeline for the S\&P~500 using only price/volume and light metadata. The key
 discipline is methodological: non-overlapping evaluation, walk-forward
 selection, explicit leakage controls, and a single-factor baseline that every
 model must clear in a clearly specified metric. The realistic conclusion is
-sobering: with these features, the trained multivariate and graph models do
-\emph{not} pass a production-grade alpha audit. The 5-day and 20-day headline
-tests still favor the simpler momentum factor, and the best 10-day residual
-overlay is attractive only before multiple-testing deflation and proxy
-factor-neutral attribution. I would not trade the current model as a standalone
-alpha. The useful output is the triage: keep 12--1 momentum as the benchmark,
-treat residual ML as a research lead only, make capacity and turnover part of
-selection, and require point-in-time constituents, delisting returns, DSR/PBO,
-and style-factor-neutral IC before promoting any future signal to a trading
-claim.
+sobering but more actionable after the Route~B rerun: broad multivariate,
+graph, and MLP searches do \emph{not} pass a production-grade alpha audit, but a
+compact 30-day XGBoost residual sleeve improves the momentum book's hold-out
+Sharpe and drawdown. I would not trade it as a standalone alpha, and I would not
+promote it without point-in-time constituents, delisting returns, stronger
+style-factor attribution, and lower-turnover execution tests. The useful output
+is the triage: keep 12--1 momentum as the core benchmark, treat residual ML as a
+small research sleeve, and make DSR/PBO, capacity, and turnover part of model
+selection rather than post-hoc decoration.
 
 \end{document}

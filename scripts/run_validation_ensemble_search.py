@@ -120,7 +120,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mlp-epochs", default="30")
     parser.add_argument("--mlp-batch-size", default="8192")
     parser.add_argument("--mlp-patience", default="5")
-    parser.add_argument("--selection-metric", default="rank_ic_ir", choices=["rank_ic_ir", "mean_rank_ic", "ic_ir", "mean_ic"])
+    parser.add_argument(
+        "--selection-metric",
+        default="rank_ic_ir",
+        choices=["rank_ic_ir", "mean_rank_ic", "ic_ir", "mean_ic", "sharpe_net", "ann_return_net"],
+    )
+    parser.add_argument(
+        "--target-residualize-factors",
+        nargs="*",
+        default=None,
+        help="Feature columns used to residualize the effective training target within each date.",
+    )
+    parser.add_argument(
+        "--target-residualize-sector",
+        action="store_true",
+        help="Include sector dummies in per-date target residualization.",
+    )
+    parser.add_argument(
+        "--target-residualize-ridge-alpha",
+        default="1.0",
+        help="Ridge penalty for per-date target residualization.",
+    )
     parser.add_argument(
         "--stability-min-years",
         type=int,
@@ -485,6 +505,13 @@ def run_candidate(task: dict[str, Any], args: argparse.Namespace, out_root: Path
         *task["variant_extra"],
         *task["spec"]["args"],
     ]
+    if args.target_residualize_factors is not None:
+        cmd.append("--target-residualize-factors")
+        cmd.extend(args.target_residualize_factors)
+    if args.target_residualize_sector:
+        cmd.append("--target-residualize-sector")
+    if args.target_residualize_ridge_alpha:
+        cmd.extend(["--target-residualize-ridge-alpha", str(args.target_residualize_ridge_alpha)])
     if args.end_date:
         cmd.extend(["--end-date", args.end_date])
     if args.rebalance_every and str(args.rebalance_every) != "auto":
@@ -531,6 +558,13 @@ def pipeline_args_for(task: dict[str, Any], args: argparse.Namespace) -> argpars
             *task["variant_extra"],
             *task["spec"]["args"],
         ]
+        if args.target_residualize_factors is not None:
+            sys.argv.append("--target-residualize-factors")
+            sys.argv.extend(args.target_residualize_factors)
+        if args.target_residualize_sector:
+            sys.argv.append("--target-residualize-sector")
+        if args.target_residualize_ridge_alpha:
+            sys.argv.extend(["--target-residualize-ridge-alpha", str(args.target_residualize_ridge_alpha)])
         if args.end_date:
             sys.argv.extend(["--end-date", args.end_date])
         if args.rebalance_every and str(args.rebalance_every) != "auto":
@@ -565,6 +599,8 @@ def run_group_in_process(
     first_args = pipeline_args_for(group_tasks[0], args)
     fmap = rmp.read_feature_map(first_args.feature_map)
     feature_cols = rmp.select_feature_columns(first_args, fmap)
+    residual_factor_cols = rmp.target_residual_factor_columns(first_args, fmap)
+    feature_cols = list(dict.fromkeys(feature_cols + residual_factor_cols))
     if first_args.include_graph_embeddings:
         feature_cols = list(dict.fromkeys(feature_cols + rmp.GRAPH_FEATURES))
     if first_args.include_supervised_graph_embeddings:
@@ -590,6 +626,15 @@ def run_group_in_process(
     )
     panel = rmp.apply_liquidity_universe(panel, "log_dollar_volume", first_args.min_dollar_volume_pct)
     panel = rmp.winsorize_by_date(panel, feature_cols, first_args.winsorize_pct)
+    target_residualization: dict[str, Any] = {}
+    if residual_factor_cols or first_args.target_residualize_sector:
+        panel, target_residualization = rmp.residualize_effective_target(
+            panel,
+            residual_factor_cols,
+            first_args.target_residualize_sector,
+            float(first_args.target_residualize_ridge_alpha),
+            first_args.min_names_per_date,
+        )
     raw_masks = rmp.split_masks(panel, first_args.train_end, first_args.val_end)
     masks = rmp.apply_purge_embargo(
         panel,
@@ -699,6 +744,7 @@ def run_group_in_process(
             pred_cols = rmp.KEY_COLS + rmp.META_COLS + [
                 task_args.target_col,
                 task_args.return_col,
+                rmp.RAW_EVAL_TARGET_COL,
                 rmp.EVAL_TARGET_COL,
                 rmp.EVAL_RETURN_COL,
                 rmp.LABEL_END_DATE_COL,
@@ -721,6 +767,7 @@ def run_group_in_process(
         config["label_horizon_days"] = horizon_days
         config["embargo_days_resolved"] = embargo_days
         config["split_audit"] = audit
+        config["target_residualization"] = target_residualization
         (run_dir / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
         pd.DataFrame({"feature": feature_cols}).to_csv(run_dir / "selected_features.csv", index=False)
         (run_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")

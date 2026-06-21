@@ -1,6 +1,12 @@
 # P0 Alpha Robustness Audit
 
-Updated: 2026-06-22 00:35 CST.
+Updated: 2026-06-22 01:35 CST.
+
+Note: this file audits the older 10d fixed-graph residual overlay. The rerun requested in
+`docs/report_improvement_plan.md` is documented separately in
+`docs/route_b_residual_alpha_20260622.md`. The newer Route B result is the preferred
+main-experiment candidate; this older audit remains as evidence that the previous
+ML/GAT direction should be downgraded.
 
 This audit stops new model/graph ablation work and evaluates the best existing 10-day sector-neutral residual overlay as a PM-facing alpha candidate.
 

@@ -27,6 +27,7 @@ KEY_COLS = ["date", "symbol"]
 META_COLS = ["sector", "sub_industry", "hq_state", "hq_region"]
 TARGET_PREFIX = "target_"
 EVAL_TARGET_COL = "_eval_target"
+RAW_EVAL_TARGET_COL = "_raw_eval_target"
 EVAL_RETURN_COL = "_eval_return"
 LABEL_END_DATE_COL = "_label_end_date"
 GRAPH_FEATURES = [f"graph_emb_{i}" for i in range(16)] + [
@@ -378,6 +379,27 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--sector-neutral", action="store_true")
     parser.add_argument(
+        "--target-residualize-factors",
+        nargs="*",
+        default=None,
+        help=(
+            "Optional feature columns used to residualize the effective training target "
+            "within each date. This trains the model on style/factor-neutral residual alpha "
+            "while the portfolio backtest still uses --return-col."
+        ),
+    )
+    parser.add_argument(
+        "--target-residualize-sector",
+        action="store_true",
+        help="Include same-date sector dummies in the target residualization design matrix.",
+    )
+    parser.add_argument(
+        "--target-residualize-ridge-alpha",
+        type=float,
+        default=1.0,
+        help="Ridge penalty for per-date target residualization.",
+    )
+    parser.add_argument(
         "--regime-periods-json",
         default=None,
         help="Optional JSON mapping regime name to [start_date, end_date].",
@@ -443,6 +465,20 @@ def select_feature_columns(args: argparse.Namespace, fmap: pd.DataFrame) -> list
     if not cols:
         raise ValueError("No usable feature columns selected.")
     return cols
+
+
+def target_residual_factor_columns(args: argparse.Namespace, fmap: pd.DataFrame) -> list[str]:
+    raw = getattr(args, "target_residualize_factors", None)
+    if raw is None:
+        return []
+    valid = set(fmap["column"])
+    missing = [c for c in raw if c not in valid]
+    if missing:
+        raise ValueError(
+            "--target-residualize-factors contains columns missing from the feature map: "
+            + ", ".join(missing)
+        )
+    return list(dict.fromkeys(raw))
 
 
 def feature_within_lookback(col: str, max_days: int) -> bool:
@@ -576,10 +612,117 @@ def attach_effective_labels(
     panel = panel.sort_values(["symbol", "date"], kind="mergesort").copy()
     g = panel.groupby("symbol", sort=False, observed=False)
     panel[EVAL_TARGET_COL] = g[target_col].shift(-execution_lag_days)
+    panel[RAW_EVAL_TARGET_COL] = panel[EVAL_TARGET_COL]
     panel[EVAL_RETURN_COL] = g[return_col].shift(-execution_lag_days)
     panel[LABEL_END_DATE_COL] = g["date"].shift(-(execution_lag_days + horizon_days))
     panel = panel.dropna(subset=[EVAL_TARGET_COL, EVAL_RETURN_COL, LABEL_END_DATE_COL]).copy()
     return panel.sort_values(["date", "symbol"], kind="mergesort").reset_index(drop=True)
+
+
+def _standardize_design(x: np.ndarray) -> np.ndarray:
+    x = x.astype(np.float64, copy=True)
+    med = np.nanmedian(x, axis=0)
+    med[~np.isfinite(med)] = 0.0
+    inds = np.where(~np.isfinite(x))
+    if len(inds[0]):
+        x[inds] = np.take(med, inds[1])
+    mean = np.nanmean(x, axis=0)
+    std = np.nanstd(x, axis=0)
+    mean[~np.isfinite(mean)] = 0.0
+    std[(~np.isfinite(std)) | (std == 0.0)] = 1.0
+    x = (x - mean) / std
+    x[~np.isfinite(x)] = 0.0
+    return x
+
+
+def residualize_effective_target(
+    panel: pd.DataFrame,
+    factor_cols: list[str],
+    include_sector: bool,
+    ridge_alpha: float,
+    min_names: int,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    """Residualize ``_eval_target`` cross-sectionally within each date.
+
+    This implements the Route B research design: the model trains on the portion
+    of the effective forward label not explained by same-date OHLCV style
+    factors and, optionally, sector dummies. Coefficients are fit independently
+    for each date, so no future dates or pooled time-series information are used
+    to define the residual target.
+    """
+    if not factor_cols and not include_sector:
+        return panel, {}
+
+    missing = [c for c in factor_cols if c not in panel.columns]
+    if missing:
+        raise ValueError(
+            "Target residualization factors are not present in the loaded panel: "
+            + ", ".join(missing)
+        )
+
+    out = panel.copy()
+    raw = out[EVAL_TARGET_COL].astype("float32")
+    out[RAW_EVAL_TARGET_COL] = raw
+    residual = pd.Series(np.nan, index=out.index, dtype="float32")
+    rows_used = 0
+    r2_values: list[float] = []
+    alpha = max(float(ridge_alpha), 0.0)
+
+    for _, g in out.groupby("date", sort=True, observed=True):
+        y = g[EVAL_TARGET_COL].to_numpy(dtype=np.float64, copy=False)
+        valid = np.isfinite(y)
+        if factor_cols:
+            x_num_all = g[factor_cols].to_numpy(dtype=np.float64, copy=False)
+            valid &= np.isfinite(x_num_all).any(axis=1)
+        if int(valid.sum()) < max(min_names, len(factor_cols) + 5):
+            continue
+
+        idx = g.index[valid]
+        yv = y[valid]
+        blocks = [np.ones((len(idx), 1), dtype=np.float64)]
+        if factor_cols:
+            blocks.append(_standardize_design(g.loc[idx, factor_cols].to_numpy(dtype=np.float64)))
+        if include_sector and "sector" in g.columns:
+            sector = pd.get_dummies(g.loc[idx, "sector"].astype("string"), dtype=np.float64)
+            if sector.shape[1] > 1:
+                blocks.append(sector.iloc[:, 1:].to_numpy(dtype=np.float64))
+        x = np.column_stack(blocks)
+        xtx = x.T @ x
+        penalty = np.eye(xtx.shape[0], dtype=np.float64) * alpha
+        penalty[0, 0] = 0.0
+        try:
+            beta = np.linalg.solve(xtx + penalty, x.T @ yv)
+        except np.linalg.LinAlgError:
+            beta = np.linalg.pinv(xtx + penalty) @ (x.T @ yv)
+        pred = x @ beta
+        resid = yv - pred
+        residual.loc[idx] = resid.astype("float32")
+        rows_used += len(idx)
+        denom = float(np.sum((yv - yv.mean()) ** 2))
+        if denom > 0:
+            r2_values.append(float(1.0 - np.sum(resid**2) / denom))
+
+    out[EVAL_TARGET_COL] = residual
+    before = len(out)
+    out = out.dropna(subset=[EVAL_TARGET_COL]).reset_index(drop=True)
+    meta: dict[str, object] = {
+        "enabled": True,
+        "factor_cols": factor_cols,
+        "include_sector": bool(include_sector),
+        "ridge_alpha": alpha,
+        "rows_before": int(before),
+        "rows_after": int(len(out)),
+        "rows_residualized": int(rows_used),
+        "dates_after": int(out["date"].nunique()),
+        "mean_daily_r2": float(np.nanmean(r2_values)) if r2_values else math.nan,
+        "median_daily_r2": float(np.nanmedian(r2_values)) if r2_values else math.nan,
+    }
+    print(
+        "Target residualization: "
+        f"rows={meta['rows_after']}/{meta['rows_before']} "
+        f"dates={meta['dates_after']} mean_daily_r2={meta['mean_daily_r2']:.4f}"
+    )
+    return out, meta
 
 
 def apply_liquidity_universe(df: pd.DataFrame, liq_col: str, drop_pct: float | None) -> pd.DataFrame:
@@ -1031,6 +1174,26 @@ def summarize_spread(spread: pd.DataFrame, periods_per_year: float) -> dict[str,
     }
 
 
+def raw_target_metric_summary(
+    df: pd.DataFrame,
+    score_col: str,
+    target_col: str,
+    args: argparse.Namespace,
+    periods_per_year: float,
+    horizon_days: int,
+) -> tuple[dict[str, float], pd.DataFrame, pd.DataFrame]:
+    if target_col == RAW_EVAL_TARGET_COL or RAW_EVAL_TARGET_COL not in df.columns:
+        return {}, pd.DataFrame(), pd.DataFrame()
+    raw_ic = spearman_by_date(df, score_col, RAW_EVAL_TARGET_COL, args.min_names_per_date)
+    raw_spread = decile_spread_by_date(
+        df, score_col, RAW_EVAL_TARGET_COL, args.long_short_pct, args.min_names_per_date
+    )
+    out: dict[str, float] = {}
+    out.update({f"raw_target_{k}": v for k, v in summarize_ic(raw_ic, horizon_days).items()})
+    out.update({f"raw_target_{k}": v for k, v in summarize_spread(raw_spread, periods_per_year).items()})
+    return out, raw_ic, raw_spread
+
+
 def summarize_backtest(bt: pd.DataFrame, periods_per_year: float) -> dict[str, float]:
     if bt.empty:
         return {
@@ -1072,6 +1235,9 @@ def evaluate_scores(
     spread = decile_spread_by_date(
         df, score_col, target_col, args.long_short_pct, args.min_names_per_date
     )
+    raw_metrics, raw_ic, raw_spread = raw_target_metric_summary(
+        df, score_col, target_col, args, periods_per_year, horizon_days
+    )
     bt = run_backtest(
         df,
         score_col,
@@ -1084,10 +1250,15 @@ def evaluate_scores(
     )
     ic.to_csv(out_dir / f"{score_col}_{split_name}_rank_ic.csv", index=False)
     spread.to_csv(out_dir / f"{score_col}_{split_name}_decile_spread.csv", index=False)
+    if not raw_ic.empty:
+        raw_ic.to_csv(out_dir / f"{score_col}_{split_name}_raw_target_rank_ic.csv", index=False)
+    if not raw_spread.empty:
+        raw_spread.to_csv(out_dir / f"{score_col}_{split_name}_raw_target_decile_spread.csv", index=False)
     bt.to_csv(out_dir / f"{score_col}_{split_name}_backtest.csv", index=False)
     metrics = {
         **summarize_ic(ic, horizon_days),
         **summarize_spread(spread, periods_per_year),
+        **raw_metrics,
         **summarize_backtest(bt, periods_per_year),
         "rows": int(len(df)),
         "dates": int(df["date"].nunique()),
@@ -1158,6 +1329,9 @@ def evaluate_score_metrics_only(
     spread = decile_spread_by_date(
         df, score_col, target_col, args.long_short_pct, args.min_names_per_date
     )
+    raw_metrics, _, _ = raw_target_metric_summary(
+        df, score_col, target_col, args, periods_per_year, horizon_days
+    )
     bt = run_backtest(
         df,
         score_col,
@@ -1171,6 +1345,7 @@ def evaluate_score_metrics_only(
     return {
         **summarize_ic(ic, horizon_days),
         **summarize_spread(spread, periods_per_year),
+        **raw_metrics,
         **summarize_backtest(bt, periods_per_year),
         "rows": int(len(df)),
         "dates": int(df["date"].nunique()),
@@ -1218,6 +1393,7 @@ def write_summary_markdown(
         f"- Rebalance every: {args.rebalance_every} trading days",
         f"- Transaction cost: {args.transaction_cost_bps:.2f} bps per one-way turnover",
         f"- Sector neutral portfolio: {args.sector_neutral}",
+        f"- Target residualized against factors: {bool(getattr(args, 'target_residualize_factors', None) or getattr(args, 'target_residualize_sector', False))}",
         "",
         "## Metrics",
         "",
@@ -1285,6 +1461,8 @@ def main() -> None:
 
     fmap = read_feature_map(args.feature_map)
     feature_cols = select_feature_columns(args, fmap)
+    residual_factor_cols = target_residual_factor_columns(args, fmap)
+    feature_cols = list(dict.fromkeys(feature_cols + residual_factor_cols))
     if args.include_graph_embeddings:
         feature_cols = list(dict.fromkeys(feature_cols + GRAPH_FEATURES))
     if args.include_supervised_graph_embeddings:
@@ -1317,6 +1495,15 @@ def main() -> None:
     )
     panel = apply_liquidity_universe(panel, "log_dollar_volume", args.min_dollar_volume_pct)
     panel = winsorize_by_date(panel, feature_cols, args.winsorize_pct)
+    target_residualization: dict[str, object] = {}
+    if residual_factor_cols or args.target_residualize_sector:
+        panel, target_residualization = residualize_effective_target(
+            panel,
+            residual_factor_cols,
+            args.target_residualize_sector,
+            args.target_residualize_ridge_alpha,
+            args.min_names_per_date,
+        )
     print(
         json.dumps(
             {
@@ -1430,6 +1617,7 @@ def main() -> None:
         pred_cols = KEY_COLS + META_COLS + [
             args.target_col,
             args.return_col,
+            RAW_EVAL_TARGET_COL,
             EVAL_TARGET_COL,
             EVAL_RETURN_COL,
             LABEL_END_DATE_COL,
@@ -1452,6 +1640,7 @@ def main() -> None:
     config["label_horizon_days"] = horizon_days
     config["embargo_days_resolved"] = embargo_days
     config["split_audit"] = audit
+    config["target_residualization"] = target_residualization
     (out_dir / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
     pd.DataFrame({"feature": feature_cols}).to_csv(out_dir / "selected_features.csv", index=False)
     (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
