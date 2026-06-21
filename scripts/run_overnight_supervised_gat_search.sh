@@ -32,6 +32,9 @@ CPU_MODELS="${CPU_MODELS:-ridge lightgbm xgboost}"
 FULL_MODELS="${FULL_MODELS:-ridge lightgbm xgboost mlp}"
 CPU_FEATURE_VARIANTS="${CPU_FEATURE_VARIANTS:-tabular fixed_graph}"
 FULL_FEATURE_VARIANTS="${FULL_FEATURE_VARIANTS:-tabular fixed_graph supervised_graph graph_supervised}"
+GRAPH_ABLATION_MODELS="${GRAPH_ABLATION_MODELS:-ridge lightgbm xgboost}"
+GAT_ABLATIONS="${GAT_ABLATIONS:-all sector style_knn rolling_corr sector_style sector_corr style_corr random no_edges}"
+GRAPH_ABLATION_FEATURE_VARIANTS="${GRAPH_ABLATION_FEATURE_VARIANTS:-supervised_graph supervised_graph_sector supervised_graph_style_knn supervised_graph_rolling_corr supervised_graph_sector_style supervised_graph_sector_corr supervised_graph_style_corr supervised_graph_random supervised_graph_no_edges}"
 
 N_JOBS="${N_JOBS:-8}"
 XGBOOST_DEVICE="${XGBOOST_DEVICE:-cpu}"
@@ -42,8 +45,15 @@ MAX_EVAL_ROWS="${MAX_EVAL_ROWS:-}"
 RIDGE_ALPHAS="${RIDGE_ALPHAS:-25}"
 LIGHTGBM_CANDIDATES_PER_TARGET="${LIGHTGBM_CANDIDATES_PER_TARGET:-0}"
 XGBOOST_CANDIDATES_PER_TARGET="${XGBOOST_CANDIDATES_PER_TARGET:-0}"
-MLP_CANDIDATES_PER_TARGET="${MLP_CANDIDATES_PER_TARGET:-12}"
+MLP_HIDDEN_SIZES="${MLP_HIDDEN_SIZES:-16 32 64}"
+MLP_NUM_LAYERS="${MLP_NUM_LAYERS:-1 2}"
+MLP_LEARNING_RATES="${MLP_LEARNING_RATES:-0.0001 0.0003 0.001}"
+MLP_DROPOUTS="${MLP_DROPOUTS:-0.1 0.3 0.5}"
+MLP_WINDOW_SIZES="${MLP_WINDOW_SIZES:-20 60}"
+MLP_WEIGHT_DECAYS="${MLP_WEIGHT_DECAYS:-0.0001 0.001}"
+MLP_CANDIDATES_PER_TARGET="${MLP_CANDIDATES_PER_TARGET:-8}"
 MLP_EPOCHS="${MLP_EPOCHS:-30}"
+MLP_ENSEMBLE_POLICY="${MLP_ENSEMBLE_POLICY:-stable_only}"
 
 GAT_HIDDEN_DIM="${GAT_HIDDEN_DIM:-64}"
 GAT_EMBEDDING_DIM="${GAT_EMBEDDING_DIM:-16}"
@@ -193,15 +203,23 @@ run_search_phase() {
     --ridge-alphas $RIDGE_ALPHAS \
     --lightgbm-candidates-per-target "$LIGHTGBM_CANDIDATES_PER_TARGET" \
     --xgboost-candidates-per-target "$XGBOOST_CANDIDATES_PER_TARGET" \
+    --mlp-hidden-sizes $MLP_HIDDEN_SIZES \
+    --mlp-num-layers $MLP_NUM_LAYERS \
+    --mlp-learning-rates $MLP_LEARNING_RATES \
+    --mlp-dropouts $MLP_DROPOUTS \
+    --mlp-window-sizes $MLP_WINDOW_SIZES \
+    --mlp-weight-decays $MLP_WEIGHT_DECAYS \
     --mlp-candidates-per-target "$MLP_CANDIDATES_PER_TARGET" \
     --mlp-epochs "$MLP_EPOCHS" \
+    --mlp-ensemble-policy "$MLP_ENSEMBLE_POLICY" \
     > "$LOG_DIR/search_${phase_name}.log" 2>&1
   log "DONE search phase ${phase_name}"
 }
 
 gat_run_name() {
   local target="$1"
-  printf 'supervised_gat__%s' "$target"
+  local ablation="$2"
+  printf 'supervised_gat__%s__%s' "$target" "$ablation"
 }
 
 train_gat_targets() {
@@ -213,33 +231,36 @@ train_gat_targets() {
     for family in $GAT_FAMILIES; do
       local target="target_${family}_fwd_${h}d"
       local ret="target_ret_fwd_${h}d"
-      local run
-      run="$(gat_run_name "$target")"
-      if [[ -f "$GAT_OUT_DIR/$run/supervised_gat_oof_embeddings.parquet" ]]; then
-        log "Skip completed GAT $target"
-        continue
-      fi
-      log "START supervised GAT $target on $device"
-      python scripts/train_supervised_gat.py \
-        --run-name "$run" \
-        --out-dir "$GAT_OUT_DIR" \
-        --feature-set "$GAT_FEATURE_SET" \
-        --target-col "$target" \
-        --return-col "$ret" \
-        --start-date "$START_DATE" \
-        --train-end "$TRAIN_END" \
-        --val-end "$VAL_END" \
-        --hidden-dim "$GAT_HIDDEN_DIM" \
-        --embedding-dim "$GAT_EMBEDDING_DIM" \
-        --epochs "$GAT_EPOCHS" \
-        --patience "$GAT_PATIENCE" \
-        --batch-dates "$GAT_BATCH_DATES" \
-        --lr "$GAT_LR" \
-        --dropout "$GAT_DROPOUT" \
-        --loss "$GAT_LOSS" \
-        --device "$device" \
-        > "$LOG_DIR/gat_${target}.log" 2>&1
-      log "DONE supervised GAT $target"
+      for ablation in $GAT_ABLATIONS; do
+        local run
+        run="$(gat_run_name "$target" "$ablation")"
+        if [[ -f "$GAT_OUT_DIR/$run/supervised_gat_oof_embeddings.parquet" ]]; then
+          log "Skip completed GAT $target ablation=$ablation"
+          continue
+        fi
+        log "START supervised GAT $target ablation=$ablation on $device"
+        python scripts/train_supervised_gat.py \
+          --run-name "$run" \
+          --out-dir "$GAT_OUT_DIR" \
+          --feature-set "$GAT_FEATURE_SET" \
+          --target-col "$target" \
+          --return-col "$ret" \
+          --start-date "$START_DATE" \
+          --train-end "$TRAIN_END" \
+          --val-end "$VAL_END" \
+          --hidden-dim "$GAT_HIDDEN_DIM" \
+          --embedding-dim "$GAT_EMBEDDING_DIM" \
+          --epochs "$GAT_EPOCHS" \
+          --patience "$GAT_PATIENCE" \
+          --batch-dates "$GAT_BATCH_DATES" \
+          --lr "$GAT_LR" \
+          --dropout "$GAT_DROPOUT" \
+          --loss "$GAT_LOSS" \
+          --relation-ablation "$ablation" \
+          --device "$device" \
+          > "$LOG_DIR/gat_${target}_${ablation}.log" 2>&1
+        log "DONE supervised GAT $target ablation=$ablation"
+      done
     done
   done
 }
@@ -256,6 +277,7 @@ main() {
   train_gat_targets
 
   wait "$cpu_pid"
+  run_search_phase "graph_ablation_tree" "$GRAPH_ABLATION_MODELS" "$GRAPH_ABLATION_FEATURE_VARIANTS"
   run_search_phase "full_after_gat" "$FULL_MODELS" "$FULL_FEATURE_VARIANTS"
   log "overnight search done"
 }

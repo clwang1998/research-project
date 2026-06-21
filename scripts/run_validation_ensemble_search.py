@@ -30,6 +30,36 @@ import run_model_pipeline as rmp  # noqa: E402
 TARGET_FAMILIES = ["excess_sector", "excess_market"]
 HORIZONS = [1, 5, 10]
 TREE_MODELS = {"ridge", "lightgbm", "xgboost"}
+SUPERVISED_GRAPH_VARIANTS = {
+    "supervised_graph": "all",
+    "supervised_graph_all": "all",
+    "supervised_graph_sector": "sector",
+    "supervised_graph_style_knn": "style_knn",
+    "supervised_graph_rolling_corr": "rolling_corr",
+    "supervised_graph_sector_style": "sector_style",
+    "supervised_graph_sector_corr": "sector_corr",
+    "supervised_graph_style_corr": "style_corr",
+    "supervised_graph_random": "random",
+    "supervised_graph_no_edges": "no_edges",
+}
+GRAPH_SUPERVISED_VARIANTS = {
+    "graph_supervised": "all",
+    "graph_supervised_all": "all",
+    "graph_supervised_sector": "sector",
+    "graph_supervised_style_knn": "style_knn",
+    "graph_supervised_rolling_corr": "rolling_corr",
+    "graph_supervised_sector_style": "sector_style",
+    "graph_supervised_sector_corr": "sector_corr",
+    "graph_supervised_style_corr": "style_corr",
+    "graph_supervised_random": "random",
+    "graph_supervised_no_edges": "no_edges",
+}
+FEATURE_VARIANT_CHOICES = [
+    "tabular",
+    "fixed_graph",
+    *SUPERVISED_GRAPH_VARIANTS.keys(),
+    *GRAPH_SUPERVISED_VARIANTS.keys(),
+]
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,7 +73,7 @@ def parse_args() -> argparse.Namespace:
         "--feature-variants",
         nargs="+",
         default=["tabular", "supervised_graph"],
-        choices=["tabular", "fixed_graph", "supervised_graph", "graph_supervised"],
+        choices=FEATURE_VARIANT_CHOICES,
     )
     parser.add_argument("--supervised-gat-root", default="data/processed/supervised_graph_embeddings")
     parser.add_argument(
@@ -72,12 +102,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ridge-alphas", nargs="+", default=["0.000001", "1", "25", "100"])
     parser.add_argument("--lightgbm-candidates-per-target", type=int, default=0)
     parser.add_argument("--xgboost-candidates-per-target", type=int, default=0)
-    parser.add_argument("--mlp-hidden-sizes", nargs="+", type=int, default=[64, 128, 256])
-    parser.add_argument("--mlp-num-layers", nargs="+", type=int, default=[2, 3, 4])
+    parser.add_argument("--mlp-hidden-sizes", nargs="+", type=int, default=[16, 32, 64])
+    parser.add_argument("--mlp-num-layers", nargs="+", type=int, default=[1, 2])
     parser.add_argument("--mlp-learning-rates", nargs="+", default=["0.0001", "0.0003", "0.001"])
-    parser.add_argument("--mlp-dropouts", nargs="+", default=["0.0", "0.1", "0.3"])
-    parser.add_argument("--mlp-window-sizes", nargs="+", type=int, default=[20, 60, 120])
-    parser.add_argument("--mlp-candidates-per-target", type=int, default=12)
+    parser.add_argument("--mlp-dropouts", nargs="+", default=["0.1", "0.3", "0.5"])
+    parser.add_argument("--mlp-window-sizes", nargs="+", type=int, default=[20, 60])
+    parser.add_argument("--mlp-weight-decays", nargs="+", default=["0.0001", "0.001"])
+    parser.add_argument("--mlp-candidates-per-target", type=int, default=8)
     parser.add_argument("--mlp-epochs", default="30")
     parser.add_argument("--mlp-batch-size", default="8192")
     parser.add_argument("--mlp-patience", default="5")
@@ -111,6 +142,18 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.0,
         help="Minimum full-validation rank IC for stability filtering.",
+    )
+    parser.add_argument(
+        "--mlp-ensemble-policy",
+        choices=["include", "stable_only", "exclude"],
+        default="stable_only",
+        help="Whether validation-selected MLP members can enter the gated ensemble.",
+    )
+    parser.add_argument(
+        "--mlp-min-ensemble-val-rank-ic",
+        type=float,
+        default=0.0,
+        help="Minimum full-validation rank IC for an MLP member in the gated ensemble.",
     )
     parser.add_argument(
         "--save-ensemble-predictions",
@@ -162,7 +205,7 @@ def run_done(run_dir: Path) -> bool:
     return (run_dir / "metrics.json").exists() and (run_dir / "config.json").exists()
 
 
-def supervised_embedding_for(root: Path, target_col: str) -> Path | None:
+def supervised_embedding_for(root: Path, target_col: str, relation_ablation: str | None = None) -> Path | None:
     candidates = []
     for config_path in root.glob("*/config.json"):
         run_dir = config_path.parent
@@ -173,7 +216,10 @@ def supervised_embedding_for(root: Path, target_col: str) -> Path | None:
             config = json.loads(config_path.read_text(encoding="utf-8"))
         except Exception:
             continue
-        if config.get("target_col") == target_col:
+        config_ablation = config.get("relation_ablation", "all")
+        if config.get("target_col") == target_col and (
+            relation_ablation is None or config_ablation == relation_ablation
+        ):
             candidates.append((emb_path.stat().st_mtime, emb_path))
     if not candidates:
         return None
@@ -270,15 +316,16 @@ def mlp_specs(args: argparse.Namespace) -> list[dict[str, Any]]:
             args.mlp_learning_rates,
             args.mlp_dropouts,
             args.mlp_window_sizes,
+            args.mlp_weight_decays,
         )
     )
     if args.mlp_candidates_per_target > 0 and len(combos) > args.mlp_candidates_per_target:
         idx = np.linspace(0, len(combos) - 1, args.mlp_candidates_per_target, dtype=int)
         combos = [combos[int(i)] for i in idx]
     specs = []
-    for hidden_size, num_layers, lr, dropout, window in combos:
+    for hidden_size, num_layers, lr, dropout, window, weight_decay in combos:
         hidden = ",".join([str(hidden_size)] * int(num_layers))
-        tag = f"mlp_h{hidden_size}_l{num_layers}_lr{lr}_do{dropout}_w{window}"
+        tag = f"mlp_h{hidden_size}_l{num_layers}_lr{lr}_do{dropout}_w{window}_wd{weight_decay}"
         tag = tag.replace(".", "p")
         specs.append(
             {
@@ -291,6 +338,7 @@ def mlp_specs(args: argparse.Namespace) -> list[dict[str, Any]]:
                     "--mlp-epochs", str(args.mlp_epochs),
                     "--mlp-batch-size", str(args.mlp_batch_size),
                     "--mlp-patience", str(args.mlp_patience),
+                    "--mlp-weight-decay", str(weight_decay),
                     "--max-lookback-days", str(window),
                 ],
             }
@@ -324,20 +372,27 @@ def variant_args(
         if not path.exists():
             return None
         return "fixed_graph", ["--include-graph-embeddings", "--graph-embedding-path", str(path)]
-    supervised_path = supervised_embedding_for(Path(args.supervised_gat_root), target_col)
-    if supervised_path is None:
-        return None
-    if variant == "supervised_graph":
+
+    if variant in SUPERVISED_GRAPH_VARIANTS:
+        ablation = SUPERVISED_GRAPH_VARIANTS[variant]
+        supervised_path = supervised_embedding_for(Path(args.supervised_gat_root), target_col, ablation)
+        if supervised_path is None:
+            return None
         return (
-            "supervised_graph",
+            variant,
             ["--include-supervised-graph-embeddings", "--supervised-graph-embedding-path", str(supervised_path)],
         )
-    if variant == "graph_supervised":
+
+    if variant in GRAPH_SUPERVISED_VARIANTS:
+        ablation = GRAPH_SUPERVISED_VARIANTS[variant]
+        supervised_path = supervised_embedding_for(Path(args.supervised_gat_root), target_col, ablation)
+        if supervised_path is None:
+            return None
         path = Path(args.graph_embedding_path)
         if not path.exists():
             return None
         return (
-            "graph_supervised",
+            variant,
             [
                 "--include-graph-embeddings", "--graph-embedding-path", str(path),
                 "--include-supervised-graph-embeddings", "--supervised-graph-embedding-path", str(supervised_path),
@@ -493,14 +548,7 @@ def run_group_in_process(
         feature_cols = list(dict.fromkeys(feature_cols + rmp.SUPERVISED_GRAPH_FEATURES))
     graph_feature_cols = [c for c in feature_cols if c in rmp.GRAPH_FEATURES]
     supervised_graph_feature_cols = [c for c in feature_cols if c in rmp.SUPERVISED_GRAPH_FEATURES]
-    if first_args.include_graph_embeddings and first_args.include_supervised_graph_embeddings:
-        feature_variant = "graph_supervised"
-    elif first_args.include_supervised_graph_embeddings:
-        feature_variant = "supervised_graph"
-    elif first_args.include_graph_embeddings:
-        feature_variant = "graph"
-    else:
-        feature_variant = "tabular"
+    feature_variant = str(group_tasks[0]["variant"])
     first_args.feature_variant_label = feature_variant
 
     panel = rmp.load_panel(first_args, feature_cols, fmap)
@@ -781,6 +829,35 @@ def rank_pct_by_date(df: pd.DataFrame, col: str) -> pd.Series:
     return df.groupby("date", observed=True)[col].rank(pct=True, method="average")
 
 
+def mlp_gated_selection(
+    selected: pd.DataFrame,
+    stability_by_run: dict[str, dict[str, Any]],
+    args: argparse.Namespace,
+) -> pd.DataFrame:
+    if args.mlp_ensemble_policy == "include":
+        return selected.copy()
+    if args.mlp_ensemble_policy == "exclude":
+        return selected.loc[selected["model"] != "mlp"].copy()
+
+    rows = []
+    for _, row in selected.iterrows():
+        if row["model"] != "mlp":
+            rows.append(row)
+            continue
+        stability = stability_by_run.get(str(row["run_name"]), {})
+        val_rank_ic = safe_float(row.get("mean_rank_ic"))
+        selection_value = safe_float(row.get(args.selection_metric))
+        if (
+            stability.get("stable") is True
+            and val_rank_ic is not None
+            and val_rank_ic >= args.mlp_min_ensemble_val_rank_ic
+            and selection_value is not None
+            and selection_value > 0
+        ):
+            rows.append(row)
+    return pd.DataFrame(rows) if rows else selected.iloc[0:0].copy()
+
+
 def candidate_stability(row: pd.Series, out_root: Path, args: argparse.Namespace) -> dict[str, Any]:
     run_dir = out_root / str(row["run_name"])
     out: dict[str, Any] = {
@@ -844,11 +921,20 @@ def ensemble_definitions(selected: pd.DataFrame, out_root: Path, args: argparse.
         if stability["stable"]:
             stable_rows.append(row)
     stable = pd.DataFrame(stable_rows) if stable_rows else selected.iloc[0:0].copy()
+    mlp_gated = mlp_gated_selection(selected, stability_by_run, args)
+    supervised_all_variants = {"supervised_graph", "supervised_graph_all"}
+    supervised_any_variants = set(SUPERVISED_GRAPH_VARIANTS)
     return [
         {
             "name": "ensemble_all_val_selected",
             "description": "Validation-selected best run per target/model/feature variant.",
             "rows": selected,
+            "stability": stability_by_run,
+        },
+        {
+            "name": "ensemble_mlp_gated",
+            "description": "Validation-selected members, with MLP included only if it passes validation stability gates.",
+            "rows": mlp_gated,
             "stability": stability_by_run,
         },
         {
@@ -865,9 +951,17 @@ def ensemble_definitions(selected: pd.DataFrame, out_root: Path, args: argparse.
         },
         {
             "name": "ensemble_supervised_graph_tree",
-            "description": "Validation-selected supervised_graph members from Ridge, LightGBM, and XGBoost.",
+            "description": "Validation-selected all-relation supervised_graph members from Ridge, LightGBM, and XGBoost.",
             "rows": selected.loc[
-                selected["model"].isin(TREE_MODELS) & selected["feature_variant"].eq("supervised_graph")
+                selected["model"].isin(TREE_MODELS) & selected["feature_variant"].isin(supervised_all_variants)
+            ].copy(),
+            "stability": stability_by_run,
+        },
+        {
+            "name": "ensemble_graph_ablation_tree",
+            "description": "Validation-selected supervised graph ablation members from Ridge, LightGBM, and XGBoost.",
+            "rows": selected.loc[
+                selected["model"].isin(TREE_MODELS) & selected["feature_variant"].isin(supervised_any_variants)
             ].copy(),
             "stability": stability_by_run,
         },
@@ -1036,6 +1130,8 @@ def evaluate_single_ensemble(
 def evaluate_ensembles(
     best: pd.DataFrame, out_root: Path, experiment_name: str, args: argparse.Namespace
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if best.empty or not {"score", "split"}.issubset(best.columns):
+        return pd.DataFrame(), pd.DataFrame()
     val = best.loc[(best["score"] == "model_score") & (best["split"] == "val")].copy()
     if val.empty:
         return pd.DataFrame(), pd.DataFrame()
@@ -1085,19 +1181,22 @@ def write_report(
         "## Best Single Models",
         "",
     ]
-    best_test = best.loc[(best["score"] == "model_score") & (best["split"] == "test")].copy()
-    best_val = best.loc[(best["score"] == "model_score") & (best["split"] == "val")][
-        ["run_name", "mean_rank_ic", "rank_ic_ir", "mean_ic", "ic_ir", "sharpe_net"]
-    ].rename(
-        columns={
-            "mean_rank_ic": "val_rank_ic",
-            "rank_ic_ir": "val_rank_icir",
-            "mean_ic": "val_ic",
-            "ic_ir": "val_icir",
-            "sharpe_net": "val_sharpe",
-        }
-    )
-    merged = best_test.merge(best_val, on="run_name", how="left")
+    if best.empty or not {"score", "split"}.issubset(best.columns):
+        merged = pd.DataFrame()
+    else:
+        best_test = best.loc[(best["score"] == "model_score") & (best["split"] == "test")].copy()
+        best_val = best.loc[(best["score"] == "model_score") & (best["split"] == "val")][
+            ["run_name", "mean_rank_ic", "rank_ic_ir", "mean_ic", "ic_ir", "sharpe_net"]
+        ].rename(
+            columns={
+                "mean_rank_ic": "val_rank_ic",
+                "rank_ic_ir": "val_rank_icir",
+                "mean_ic": "val_ic",
+                "ic_ir": "val_icir",
+                "sharpe_net": "val_sharpe",
+            }
+        )
+        merged = best_test.merge(best_val, on="run_name", how="left")
     if merged.empty:
         lines.append("_No completed single-model runs yet._")
     else:
@@ -1140,9 +1239,11 @@ def write_report(
             "## Ensemble Definitions",
             "",
             "- `ensemble_all_val_selected`: current validation-selected best run per target/model/feature variant.",
+            "- `ensemble_mlp_gated`: validation-selected members where MLP is included only when it passes validation stability gates.",
             "- `ensemble_no_mlp`: validation-selected members excluding all MLP runs.",
             "- `ensemble_tree_only`: validation-selected Ridge, LightGBM, and XGBoost members only.",
-            "- `ensemble_supervised_graph_tree`: supervised_graph Ridge, LightGBM, and XGBoost members only.",
+            "- `ensemble_supervised_graph_tree`: all-relation supervised_graph Ridge, LightGBM, and XGBoost members only.",
+            "- `ensemble_graph_ablation_tree`: supervised graph relation-ablation Ridge, LightGBM, and XGBoost members only.",
             "- `ensemble_stability_filtered`: validation-selected members with positive full-validation rank IC, enough positive validation years, and non-negative available validation-regime rank IC.",
             "",
             "## Notes",

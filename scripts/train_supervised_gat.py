@@ -32,6 +32,17 @@ import run_model_pipeline as rmp  # noqa: E402
 
 
 RELATIONS = ["sector", "style_knn", "rolling_corr"]
+RELATION_ABLATIONS = {
+    "all": RELATIONS,
+    "sector": ["sector"],
+    "style_knn": ["style_knn"],
+    "rolling_corr": ["rolling_corr"],
+    "sector_style": ["sector", "style_knn"],
+    "sector_corr": ["sector", "rolling_corr"],
+    "style_corr": ["style_knn", "rolling_corr"],
+    "random": RELATIONS,
+    "no_edges": [],
+}
 SUPERVISED_SCORE_COL = "supervised_graph_score"
 SUPERVISED_EMB_PREFIX = "supervised_graph_emb_"
 SUPERVISED_REL_PREFIX = "supervised_graph_rel_weight_"
@@ -107,6 +118,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rank-loss-weight", type=float, default=0.1)
     parser.add_argument("--rank-pairs-per-date", type=int, default=4096)
     parser.add_argument("--huber-delta", type=float, default=1.0)
+    parser.add_argument(
+        "--relation-ablation",
+        choices=sorted(RELATION_ABLATIONS),
+        default="all",
+        help="Graph relation set to train with. random uses all relations with shuffled destinations.",
+    )
+    parser.add_argument(
+        "--edge-randomization",
+        choices=["none", "shuffle_dst"],
+        default="none",
+        help="Optional edge placebo; random relation ablation forces shuffle_dst.",
+    )
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda", "mps"])
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--min-names-per-date", type=int, default=100)
@@ -150,11 +173,42 @@ def relation_path(graph_dir: Path, relation: str) -> Path:
     return graph_dir / f"{relation}_edges.parquet"
 
 
-def load_edges(graph_dir: Path) -> dict[str, dict[pd.Timestamp, pd.DataFrame]]:
+def relation_config(relation_ablation: str, edge_randomization: str) -> tuple[list[str], str]:
+    relations = list(RELATION_ABLATIONS[relation_ablation])
+    if relation_ablation == "random":
+        edge_randomization = "shuffle_dst"
+    return relations, edge_randomization
+
+
+def shuffle_edge_destinations(df: pd.DataFrame, seed: int) -> pd.DataFrame:
+    """Shuffle destinations within each date as a graph-structure placebo."""
+    if df.empty:
+        return df.copy()
+    rng = np.random.default_rng(seed)
+    parts = []
+    for _, day in df.groupby("date", sort=False):
+        shuffled = day.copy()
+        dst = shuffled["dst"].to_numpy(copy=True)
+        rng.shuffle(dst)
+        shuffled["dst"] = dst
+        parts.append(shuffled)
+    return pd.concat(parts, ignore_index=True)
+
+
+def load_edges(
+    graph_dir: Path,
+    relations: list[str],
+    edge_randomization: str,
+    seed: int,
+) -> dict[str, dict[pd.Timestamp, pd.DataFrame]]:
     out: dict[str, dict[pd.Timestamp, pd.DataFrame]] = {}
-    for rel in RELATIONS:
+    for rel_idx, rel in enumerate(relations):
+        if rel not in RELATIONS:
+            raise ValueError(f"Unknown relation: {rel}")
         df = pd.read_parquet(relation_path(graph_dir, rel))
         df["date"] = pd.to_datetime(df["date"])
+        if edge_randomization == "shuffle_dst":
+            df = shuffle_edge_destinations(df, seed + (rel_idx + 1) * 1009)
         out[rel] = {pd.Timestamp(k): v.copy() for k, v in df.groupby("date", sort=False)}
     return out
 
@@ -166,9 +220,17 @@ def edge_dates(edges: dict[str, dict[pd.Timestamp, pd.DataFrame]]) -> pd.Datetim
     return pd.DatetimeIndex(sorted(dates))
 
 
+def relation_dates(graph_dir: Path, relations: list[str]) -> pd.DatetimeIndex:
+    dates: set[pd.Timestamp] = set()
+    for rel in relations:
+        df = pd.read_parquet(relation_path(graph_dir, rel), columns=["date"])
+        dates.update(pd.to_datetime(df["date"]).drop_duplicates().map(pd.Timestamp))
+    return pd.DatetimeIndex(sorted(dates))
+
+
 def load_gat_panel(
     args: argparse.Namespace,
-    graph_dates: pd.DatetimeIndex,
+    graph_dates: pd.DatetimeIndex | None,
     feature_cols: list[str],
 ) -> tuple[pd.DataFrame, list[str], pd.DatetimeIndex]:
     feature_dir = Path(args.feature_dir)
@@ -190,8 +252,15 @@ def load_gat_panel(
         horizon_days,
         args.execution_lag_days,
     )
-    graph_date_set = set(pd.to_datetime(graph_dates))
-    panel = targets.loc[targets["date"].isin(graph_date_set)].copy()
+    if graph_dates is None:
+        panel = targets.copy()
+        if args.max_graph_dates:
+            keep_dates = pd.DatetimeIndex(sorted(panel["date"].drop_duplicates()))[-args.max_graph_dates :]
+            panel = panel.loc[panel["date"].isin(set(keep_dates))].copy()
+    else:
+        graph_date_set = set(pd.to_datetime(graph_dates))
+        panel = targets.loc[targets["date"].isin(graph_date_set)].copy()
+    panel_date_set = set(pd.to_datetime(panel["date"].drop_duplicates()))
 
     fmap = rmp.read_feature_map(args.feature_map)
     by_file = (
@@ -203,7 +272,7 @@ def load_gat_panel(
     for file_name, cols in sorted(by_file.items()):
         part = pd.read_parquet(feature_dir / file_name, columns=rmp.KEY_COLS + cols)
         part["date"] = pd.to_datetime(part["date"])
-        part = part.loc[part["date"].isin(graph_date_set)].copy()
+        part = part.loc[part["date"].isin(panel_date_set)].copy()
         panel = panel.merge(part, on=rmp.KEY_COLS, how="left", sort=False)
         del part
 
@@ -333,6 +402,7 @@ def build_edge_tensors(
 def make_samples(
     panel: pd.DataFrame,
     edges: dict[str, dict[pd.Timestamp, pd.DataFrame]],
+    relations: list[str],
     dates: pd.DatetimeIndex,
     stats: FoldStats,
     device: torch.device,
@@ -354,7 +424,7 @@ def make_samples(
                 symbol_to_idx,
                 device,
             )
-            for rel in RELATIONS
+            for rel in relations
         }
         samples.append(
             GraphSample(
@@ -379,10 +449,14 @@ class RelationGATLayer(nn.Module):
         self.att_src = nn.ParameterDict({rel: nn.Parameter(torch.empty(out_dim)) for rel in relations})
         self.att_dst = nn.ParameterDict({rel: nn.Parameter(torch.empty(out_dim)) for rel in relations})
         self.self_linear = nn.Linear(in_dim, out_dim, bias=False)
-        self.fusion = nn.Sequential(
-            nn.Linear(out_dim * (len(relations) + 1), out_dim),
-            nn.ReLU(),
-            nn.Linear(out_dim, len(relations)),
+        self.fusion = (
+            nn.Sequential(
+                nn.Linear(out_dim * (len(relations) + 1), out_dim),
+                nn.ReLU(),
+                nn.Linear(out_dim, len(relations)),
+            )
+            if relations
+            else None
         )
         self.norm = nn.LayerNorm(out_dim)
         self.reset_parameters()
@@ -432,6 +506,12 @@ class RelationGATLayer(nn.Module):
         x: torch.Tensor,
         edges: dict[str, tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        self_part = self.self_linear(x)
+        if not self.relations:
+            out = torch.tanh(self.norm(self_part))
+            rel_weight = x.new_zeros((x.shape[0], 0))
+            return self.dropout(out), rel_weight
+
         rel_outputs = []
         degree_mask = []
         for rel in self.relations:
@@ -443,8 +523,9 @@ class RelationGATLayer(nn.Module):
                 degree[src.unique()] = True
             degree_mask.append(degree)
         rel_stack = torch.stack(rel_outputs, dim=1)
-        self_part = self.self_linear(x)
         fusion_input = torch.cat([rel_stack.flatten(1), self_part], dim=1)
+        if self.fusion is None:
+            raise RuntimeError("Relation fusion is missing for a non-empty relation set.")
         logits = self.fusion(self.dropout(fusion_input))
         mask = torch.stack(degree_mask, dim=1)
         logits = logits.masked_fill(~mask, -1e9)
@@ -552,6 +633,7 @@ def train_fold_model(
     train_samples: list[GraphSample],
     val_samples: list[GraphSample],
     input_dim: int,
+    relations: list[str],
     args: argparse.Namespace,
     device: torch.device,
 ) -> tuple[RelationAwareGAT, dict[str, Any]]:
@@ -559,7 +641,7 @@ def train_fold_model(
         input_dim=input_dim,
         hidden_dim=args.hidden_dim,
         embedding_dim=args.embedding_dim,
-        relations=RELATIONS,
+        relations=relations,
         dropout=args.dropout,
     ).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -620,6 +702,7 @@ def infer_samples(
     rows = []
     emb_cols = [f"{SUPERVISED_EMB_PREFIX}{i}" for i in range(model.gat2.self_linear.out_features)]
     rel_cols = [f"{SUPERVISED_REL_PREFIX}{rel}" for rel in RELATIONS]
+    active_relations = list(getattr(model.gat2, "relations", []))
     for sample in samples:
         pred_std, emb, rel_weight = model(sample.x, sample.edges)
         pred = stats.inverse_y(pred_std.detach().cpu().numpy())
@@ -641,8 +724,10 @@ def infer_samples(
         )
         for j, col in enumerate(emb_cols):
             frame[col] = emb_np[:, j]
-        for j, col in enumerate(rel_cols):
-            frame[col] = rel_np[:, j]
+        for col in rel_cols:
+            frame[col] = np.float32(0.0)
+        for j, rel in enumerate(active_relations):
+            frame[f"{SUPERVISED_REL_PREFIX}{rel}"] = rel_np[:, j]
         rows.append(frame)
     if not rows:
         return pd.DataFrame()
@@ -832,16 +917,18 @@ def main() -> None:
     run_dir = Path(args.out_dir) / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
     device = resolve_device(args.device)
+    relations, edge_randomization = relation_config(args.relation_ablation, args.edge_randomization)
 
     fmap = rmp.read_feature_map(args.feature_map)
     feature_cols = rmp.select_feature_columns(args, fmap)
-    edges = load_edges(Path(args.graph_dir))
-    graph_dates = edge_dates(edges)
-    if args.start_date:
+    edges = load_edges(Path(args.graph_dir), relations, edge_randomization, args.seed)
+    graph_dir = Path(args.graph_dir)
+    graph_dates = edge_dates(edges) if relations else relation_dates(graph_dir, RELATIONS)
+    if graph_dates is not None and args.start_date:
         graph_dates = graph_dates[graph_dates >= pd.Timestamp(args.start_date)]
-    if args.end_date:
+    if graph_dates is not None and args.end_date:
         graph_dates = graph_dates[graph_dates <= pd.Timestamp(args.end_date)]
-    if args.max_graph_dates:
+    if graph_dates is not None and args.max_graph_dates:
         graph_dates = graph_dates[-args.max_graph_dates :]
 
     panel, feature_cols, daily_calendar = load_gat_panel(args, graph_dates, feature_cols)
@@ -859,6 +946,9 @@ def main() -> None:
                 "return_col": args.return_col,
                 "horizon_days": horizon_days,
                 "embargo_days": embargo_days,
+                "relation_ablation": args.relation_ablation,
+                "relations": relations,
+                "edge_randomization": edge_randomization,
                 "feature_count": len(feature_cols),
                 "graph_dates": int(panel["date"].nunique()),
                 "symbols": int(panel["symbol"].nunique()),
@@ -881,9 +971,9 @@ def main() -> None:
         if len(internal_train_dates) == 0 or len(infer_dates) == 0:
             continue
         stats = fit_stats(panel, feature_cols, internal_train_dates)
-        train_samples = make_samples(panel, edges, internal_train_dates, stats, device)
-        val_samples = make_samples(panel, edges, internal_val_dates, stats, device)
-        infer_samples_list = make_samples(panel, edges, infer_dates, stats, device)
+        train_samples = make_samples(panel, edges, relations, internal_train_dates, stats, device)
+        val_samples = make_samples(panel, edges, relations, internal_val_dates, stats, device)
+        infer_samples_list = make_samples(panel, edges, relations, infer_dates, stats, device)
         if not train_samples or not infer_samples_list:
             continue
         print(
@@ -891,7 +981,14 @@ def main() -> None:
             f"early_stop_dates={len(internal_val_dates)} infer_dates={len(infer_dates)}",
             flush=True,
         )
-        model, info = train_fold_model(train_samples, val_samples, len(feature_cols), args, device)
+        model, info = train_fold_model(
+            train_samples,
+            val_samples,
+            len(feature_cols),
+            relations,
+            args,
+            device,
+        )
         pred = infer_samples(model, infer_samples_list, stats, "train_oof", fold_name)
         write_fold_outputs(run_dir, fold_name, pred)
         all_predictions.append(pred)
@@ -902,15 +999,22 @@ def main() -> None:
     final_infer_dates = pd.DatetimeIndex(sorted(final_val_dates.union(split_dates["test"])))
     if len(final_train_dates) and len(final_infer_dates):
         stats = fit_stats(panel, feature_cols, final_train_dates)
-        train_samples = make_samples(panel, edges, final_train_dates, stats, device)
-        val_samples = make_samples(panel, edges, final_val_dates, stats, device)
-        infer_samples_list = make_samples(panel, edges, final_infer_dates, stats, device)
+        train_samples = make_samples(panel, edges, relations, final_train_dates, stats, device)
+        val_samples = make_samples(panel, edges, relations, final_val_dates, stats, device)
+        infer_samples_list = make_samples(panel, edges, relations, final_infer_dates, stats, device)
         print(
             f"Training final_val_test: train_dates={len(final_train_dates)} "
             f"early_stop_dates={len(final_val_dates)} infer_dates={len(final_infer_dates)}",
             flush=True,
         )
-        model, info = train_fold_model(train_samples, val_samples, len(feature_cols), args, device)
+        model, info = train_fold_model(
+            train_samples,
+            val_samples,
+            len(feature_cols),
+            relations,
+            args,
+            device,
+        )
         pred = infer_samples(model, infer_samples_list, stats, "val_test", "final_val_test")
         pred.loc[pred["date"].isin(split_dates["val"]), "split"] = "val"
         pred.loc[pred["date"].isin(split_dates["test"]), "split"] = "test"
@@ -958,6 +1062,9 @@ def main() -> None:
         "horizon_days": horizon_days,
         "embargo_days": embargo_days,
         "device": str(device),
+        "relation_ablation": args.relation_ablation,
+        "relations": relations,
+        "edge_randomization": edge_randomization,
         "feature_count": len(feature_cols),
         "graph_date_metrics": summarize_predictions(graph_pred, horizon_days, args),
         "fold_metrics": fold_metrics,
@@ -971,6 +1078,8 @@ def main() -> None:
     config = vars(args).copy()
     config["run_name"] = run_name
     config["device_resolved"] = str(device)
+    config["relations"] = relations
+    config["edge_randomization_resolved"] = edge_randomization
     config["feature_count"] = len(feature_cols)
     config["output_columns"] = out_cols
     (run_dir / "config.json").write_text(json.dumps(config, indent=2, default=str), encoding="utf-8")
