@@ -6,7 +6,9 @@ This rerun follows `docs/report_improvement_plan.md`: stop graph/Kronos/MLP abla
 
 ## Experiment
 
-- Remote experiment: `route_b_factor_residual_alpha_core_20260622`
+- Experiment: `route_b_factor_residual_alpha_core_20260622`, trained on the GPU
+  server and mirrored locally under
+  `output/model_search/route_b_factor_residual_alpha_core_20260622*`.
 - Models: Ridge and XGBoost only.
 - Feature set: `core` plus residualization factors.
 - Horizons: 5d, 10d, 20d, 30d.
@@ -26,9 +28,20 @@ where the XGBoost model is `xgb_balanced` trained on the 30d factor-neutral resi
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | momentum baseline | 0.0282 | 0.698 | 0.740 | 7.78% | -13.83% | 0.401 |
 | Route B overlay, val-selected | 0.0283 | 0.768 | 0.970 | 8.08% | -6.96% | 0.492 |
-| Route B overlay, diagnostic lambda=0.3 | 0.0280 | 0.806 | 1.201 | 9.98% | -6.10% | 0.521 |
 
-Use the validation-selected `lambda=0.2` line as the report-safe positive result. The `lambda=0.3` line is diagnostic only unless the selection rule is re-run to select it on validation.
+Use the validation-selected `lambda=0.2` line as the report-safe positive
+result. The diagnostic `lambda=0.3` line exists in
+`output/model_search/route_b_factor_residual_alpha_core_20260622_30d_ultra_blend_metrics.csv`
+with test Sharpe 1.20, but it is intentionally excluded from the main table
+because it was not the validation-selected overlay weight.
+
+The synchronized local artifacts also preserve the standard-baseline
+cross-check: `eval_momentum_baseline.py` reproduces the 30d signal metrics and
+turnover closely, but gives a different standalone momentum Sharpe
+(`0.802` rather than the Route B pipeline's `0.740`). Therefore the Route B
+overlay improvement should be read under one internal pipeline convention
+(+0.23 Sharpe versus Route B momentum), with a conservative cross-convention
+read of roughly +0.17 versus the standard baseline script.
 
 ## Single Residual Model
 
@@ -43,7 +56,7 @@ Interpretation: the model finds a residual ranking signal, but the standalone re
 
 ## Robustness Audit
 
-Post-training audit path on remote:
+Post-training audit path, mirrored locally:
 
 `output/alpha_robustness_audit_route_b_30d/`
 
@@ -76,6 +89,11 @@ Survivorship haircut sensitivity:
 
 The revised report should not claim that complex ML broadly beats momentum. The stronger, defensible statement is:
 
-> Momentum remains the base tradable signal. A compact XGBoost model trained on factor-neutral residual labels provides a 30-day incremental overlay that improves the 2022--2026 holdout net Sharpe and drawdown versus standalone momentum. The result is economically interesting and survives basic capacity and survivorship haircuts, but it remains exploratory because full-grid DSR fails and CPCV PBO is high.
+> Momentum remains the base tradable signal. A compact XGBoost model trained on
+> factor-neutral residual labels provides a 30-day incremental overlay that
+> improves 2022--2026 holdout Sharpe and drawdown under the Route B pipeline.
+> The result is a candidate risk-timing sleeve, not a confirmed alpha: the Rank
+> IC improvement is negligible, the full-grid DSR fails, CSCV PBO is 50%, and
+> the standalone momentum baseline has a portfolio-convention sensitivity.
 
 This is materially better than the old graph/MLP/GAT story because it has a clean economic role: the model is not a replacement for momentum; it is a small residual sleeve added to a strong baseline.
