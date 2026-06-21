@@ -1,0 +1,36 @@
+{
+  "description": "Sensitivity deducts annual stock-borrow cost from the assumed short notional and prorates it by rebalance horizon. Reported returns already include explicit 5 bps/side trading costs.",
+  "short_notional_assumption": 0.5,
+  "borrow_bps_annual": [
+    0.0,
+    25.0,
+    50.0,
+    100.0
+  ],
+  "books": [
+    {
+      "book": "momentum_5d",
+      "horizon_days": 5,
+      "source_file": "report/artifacts/momentum_portfolio_uncertainty/momentum_5d_returns.csv",
+      "return_column": "net_return"
+    },
+    {
+      "book": "momentum_20d",
+      "horizon_days": 20,
+      "source_file": "report/artifacts/momentum_portfolio_uncertainty/momentum_20d_returns.csv",
+      "return_column": "net_return"
+    },
+    {
+      "book": "momentum_30d",
+      "horizon_days": 30,
+      "source_file": "report/artifacts/momentum_portfolio_uncertainty/momentum_30d_returns.csv",
+      "return_column": "net_return"
+    },
+    {
+      "book": "route_b_overlay_30d",
+      "horizon_days": 30,
+      "source_file": "report/artifacts/route_b_paired_increment/paired_returns.csv",
+      "return_column": "overlay_net_return"
+    }
+  ]
+}
