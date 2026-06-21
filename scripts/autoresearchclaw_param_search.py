@@ -305,7 +305,9 @@ def extract_metrics(metrics_dir: Path, experiment_names: list[str]) -> pd.DataFr
                             "score": score,
                             "split": split,
                             "mean_rank_ic": safe_float(vals.get("mean_rank_ic")),
+                            "mean_ic": safe_float(vals.get("mean_ic")),
                             "rank_ic_ir": safe_float(vals.get("rank_ic_ir")),
+                            "ic_ir": safe_float(vals.get("ic_ir")),
                             "mean_top_bottom_spread": safe_float(vals.get("mean_top_bottom_spread")),
                             "spread_ir": safe_float(vals.get("spread_ir")),
                             "ann_return_net": safe_float(vals.get("ann_return_net")),
@@ -360,6 +362,7 @@ def write_arc_artifacts(
                 "model": row["model"],
                 "best_validation_icir": row["rank_ic_ir"],
                 "best_validation_ic": row["mean_rank_ic"],
+                "best_validation_pearson_ic": row.get("mean_ic"),
             }
         )
 
@@ -388,6 +391,7 @@ def write_arc_artifacts(
         condition_summaries[row["run_name"]] = {
             "metrics": {
                 "validation_rank_ic": row["mean_rank_ic"],
+                "validation_pearson_ic": row.get("mean_ic"),
                 "validation_rank_ic_ir": row["rank_ic_ir"],
             },
             "target_col": row["target_col"],

@@ -43,8 +43,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--include-graph-embeddings", action="store_true")
     parser.add_argument(
         "--graph-embedding-path",
-        default="data/processed/graph_embeddings/gat_embeddings_daily.parquet",
+        default="data/processed/graph_embeddings/graph_relation_embeddings_daily.parquet",
     )
+    parser.add_argument("--include-supervised-graph-embeddings", action="store_true")
+    parser.add_argument(
+        "--supervised-graph-embedding-path",
+        default="data/processed/supervised_graph_embeddings/latest/supervised_gat_oof_embeddings.parquet",
+    )
+    parser.add_argument("--max-lookback-days", type=int, default=None)
     # Walk-forward schedule.
     parser.add_argument("--start-date", default="2005-01-01")
     parser.add_argument("--end-date", default=None)
@@ -238,6 +244,18 @@ def main() -> None:
     feature_cols = rmp.select_feature_columns(args, fmap)
     if args.include_graph_embeddings:
         feature_cols = list(dict.fromkeys(feature_cols + rmp.GRAPH_FEATURES))
+    if args.include_supervised_graph_embeddings:
+        feature_cols = list(dict.fromkeys(feature_cols + rmp.SUPERVISED_GRAPH_FEATURES))
+    graph_feature_cols = [c for c in feature_cols if c in rmp.GRAPH_FEATURES]
+    supervised_graph_feature_cols = [c for c in feature_cols if c in rmp.SUPERVISED_GRAPH_FEATURES]
+    if args.include_graph_embeddings and args.include_supervised_graph_embeddings:
+        feature_variant = "graph_supervised"
+    elif args.include_supervised_graph_embeddings:
+        feature_variant = "supervised_graph"
+    elif args.include_graph_embeddings:
+        feature_variant = "graph"
+    else:
+        feature_variant = "tabular"
 
     panel = rmp.load_panel(args, feature_cols, fmap)
     horizon_days = rmp.infer_horizon_days(args.target_col, args.return_col)
@@ -258,12 +276,16 @@ def main() -> None:
             {
                 "model": args.model,
                 "target_col": args.target_col,
+                "feature_variant": feature_variant,
                 "horizon_days": horizon_days,
                 "embargo_days": embargo_days,
                 "rebalance_every": rebalance_every,
                 "n_folds": len(folds),
                 "holdout_start": args.holdout_start,
                 "rows": int(len(panel)),
+                "feature_count": len(feature_cols),
+                "graph_feature_count": len(graph_feature_cols),
+                "supervised_graph_feature_count": len(supervised_graph_feature_cols),
             },
             indent=2,
         )
@@ -320,6 +342,17 @@ def main() -> None:
     summary = {
         "run_name": run_name,
         "model": args.model,
+        "feature_variant": feature_variant,
+        "feature_set": args.feature_set,
+        "feature_groups": args.feature_groups,
+        "feature_count": len(feature_cols),
+        "include_graph_embeddings": bool(args.include_graph_embeddings),
+        "graph_embedding_path": args.graph_embedding_path,
+        "graph_feature_count": len(graph_feature_cols),
+        "graph_feature_columns": graph_feature_cols,
+        "supervised_graph_embedding_path": args.supervised_graph_embedding_path,
+        "supervised_graph_feature_count": len(supervised_graph_feature_cols),
+        "supervised_graph_feature_columns": supervised_graph_feature_cols,
         "target_col": args.target_col,
         "return_col": args.return_col,
         "horizon_days": horizon_days,
@@ -336,7 +369,14 @@ def main() -> None:
     (out_dir / "walk_forward_metrics.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     config = vars(args).copy()
     config["run_name"] = run_name
+    config["feature_variant"] = feature_variant
+    config["feature_count"] = len(feature_cols)
+    config["graph_feature_count"] = len(graph_feature_cols)
+    config["graph_feature_columns"] = graph_feature_cols
+    config["supervised_graph_feature_count"] = len(supervised_graph_feature_cols)
+    config["supervised_graph_feature_columns"] = supervised_graph_feature_cols
     (out_dir / "config.json").write_text(json.dumps(config, indent=2, default=str), encoding="utf-8")
+    pd.DataFrame({"feature": feature_cols}).to_csv(out_dir / "selected_features.csv", index=False)
     print(f"Done. Walk-forward results written to {out_dir}")
     print(json.dumps({"fold_aggregate": agg, "holdout": holdout_metrics}, indent=2))
 

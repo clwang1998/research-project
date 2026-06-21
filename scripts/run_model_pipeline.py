@@ -34,6 +34,17 @@ GRAPH_FEATURES = [f"graph_emb_{i}" for i in range(16)] + [
     "graph_rel_weight_style_knn",
     "graph_rel_weight_rolling_corr",
 ]
+REGIME_PERIODS = {
+    "gfc_2008": ("2008-01-01", "2009-12-31"),
+    "covid_2020": ("2020-01-01", "2020-12-31"),
+    "inflation_2022": ("2022-01-01", "2022-12-31"),
+}
+SUPERVISED_GRAPH_FEATURES = [f"supervised_graph_emb_{i}" for i in range(16)] + [
+    "supervised_graph_score",
+    "supervised_graph_rel_weight_sector",
+    "supervised_graph_rel_weight_style_knn",
+    "supervised_graph_rel_weight_rolling_corr",
+]
 
 CORE_FEATURES = [
     # Price momentum and short-term reversal
@@ -201,7 +212,12 @@ class TorchMLPRegressor:
 
         torch.manual_seed(self.seed)
         rng = np.random.default_rng(self.seed)
-        self._device = "mps" if torch.backends.mps.is_available() else "cpu"
+        if torch.cuda.is_available():
+            self._device = "cuda"
+        elif torch.backends.mps.is_available():
+            self._device = "mps"
+        else:
+            self._device = "cpu"
         x = np.ascontiguousarray(x, dtype=np.float32)
         y = np.asarray(y, dtype=np.float32).reshape(-1)
         finite = np.isfinite(y)
@@ -296,7 +312,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--include-graph-embeddings", action="store_true")
     parser.add_argument(
         "--graph-embedding-path",
-        default="data/processed/graph_embeddings/gat_embeddings_daily.parquet",
+        default="data/processed/graph_embeddings/graph_relation_embeddings_daily.parquet",
+    )
+    parser.add_argument("--include-supervised-graph-embeddings", action="store_true")
+    parser.add_argument(
+        "--supervised-graph-embedding-path",
+        default="data/processed/supervised_graph_embeddings/latest/supervised_gat_oof_embeddings.parquet",
+    )
+    parser.add_argument(
+        "--max-lookback-days",
+        type=int,
+        default=None,
+        help="Optional feature-window filter. Features with day lookbacks larger than this are skipped.",
     )
     parser.add_argument(
         "--model",
@@ -349,6 +376,11 @@ def parse_args() -> argparse.Namespace:
         help="Drop this bottom fraction of names per date by log dollar volume; 0 disables.",
     )
     parser.add_argument("--sector-neutral", action="store_true")
+    parser.add_argument(
+        "--regime-periods-json",
+        default=None,
+        help="Optional JSON mapping regime name to [start_date, end_date].",
+    )
     parser.add_argument("--save-predictions", action="store_true")
     parser.add_argument("--n-estimators", type=int, default=300)
     parser.add_argument("--learning-rate", type=float, default=0.05)
@@ -405,9 +437,19 @@ def select_feature_columns(args: argparse.Namespace, fmap: pd.DataFrame) -> list
         print(f"Warning: {len(missing)} core features not found and skipped: {missing}")
 
     cols = [c for c in dict.fromkeys(cols) if c in valid and not c.startswith(TARGET_PREFIX)]
+    if args.max_lookback_days is not None:
+        cols = [c for c in cols if feature_within_lookback(c, args.max_lookback_days)]
     if not cols:
         raise ValueError("No usable feature columns selected.")
     return cols
+
+
+def feature_within_lookback(col: str, max_days: int) -> bool:
+    lookbacks = [int(x) for x in re.findall(r"(?<!\d)(\d+)d(?!\d)", col)]
+    skip_match = re.search(r"skip_(\d+)d", col)
+    if skip_match:
+        lookbacks.append(int(skip_match.group(1)))
+    return not lookbacks or max(lookbacks) <= max_days
 
 
 def infer_horizon_days(*column_names: str) -> int:
@@ -472,6 +514,33 @@ def load_panel(args: argparse.Namespace, feature_cols: list[str], fmap: pd.DataF
             graph = graph.loc[graph["date"] <= pd.Timestamp(args.end_date)]
         panel = panel.merge(graph, on=KEY_COLS, how="left", sort=False)
         del graph
+
+    supervised_graph_cols = [c for c in feature_cols if c in SUPERVISED_GRAPH_FEATURES]
+    if supervised_graph_cols:
+        supervised_graph_path = Path(args.supervised_graph_embedding_path)
+        print(
+            f"Joining supervised graph embeddings: {supervised_graph_path} "
+            f"({len(supervised_graph_cols)} features)"
+        )
+        supervised_graph = pd.read_parquet(
+            supervised_graph_path,
+            columns=KEY_COLS + META_COLS + supervised_graph_cols,
+        )
+        if args.start_date:
+            supervised_graph = supervised_graph.loc[
+                supervised_graph["date"] >= pd.Timestamp(args.start_date)
+            ]
+        if args.end_date:
+            supervised_graph = supervised_graph.loc[
+                supervised_graph["date"] <= pd.Timestamp(args.end_date)
+            ]
+        panel = panel.merge(
+            supervised_graph,
+            on=KEY_COLS + META_COLS,
+            how="left",
+            sort=False,
+        )
+        del supervised_graph
 
     panel = panel.sort_values(["date", "symbol"], kind="mergesort").reset_index(drop=True)
     return panel
@@ -727,14 +796,28 @@ def fit_model(args: argparse.Namespace, x_train: np.ndarray, y_train: np.ndarray
     return model_name, model
 
 
+def safe_corrcoef(x: pd.Series, y: pd.Series) -> float:
+    x_arr = x.to_numpy(dtype=np.float64, copy=False)
+    y_arr = y.to_numpy(dtype=np.float64, copy=False)
+    finite = np.isfinite(x_arr) & np.isfinite(y_arr)
+    x_arr = x_arr[finite]
+    y_arr = y_arr[finite]
+    if len(x_arr) < 2 or np.ptp(x_arr) == 0.0 or np.ptp(y_arr) == 0.0:
+        return math.nan
+    with np.errstate(invalid="ignore", divide="ignore"):
+        corr = np.corrcoef(x_arr, y_arr)[0, 1]
+    return float(corr) if np.isfinite(corr) else math.nan
+
+
 def spearman_by_date(df: pd.DataFrame, score_col: str, target_col: str, min_names: int) -> pd.DataFrame:
     rows = []
     for dt, g in df.groupby("date", sort=True):
         g = g[[score_col, target_col]].dropna()
         if len(g) < min_names:
             continue
-        corr = g[score_col].rank().corr(g[target_col].rank())
-        rows.append({"date": dt, "rank_ic": corr, "n": len(g)})
+        rank_corr = safe_corrcoef(g[score_col].rank(), g[target_col].rank())
+        pearson_corr = safe_corrcoef(g[score_col], g[target_col])
+        rows.append({"date": dt, "rank_ic": rank_corr, "ic": pearson_corr, "n": len(g)})
     return pd.DataFrame(rows)
 
 
@@ -786,7 +869,7 @@ def choose_weights(
 
     sector_weights = []
     usable = 0
-    for _, sg in g.groupby("sector", sort=False):
+    for _, sg in g.groupby("sector", sort=False, observed=True):
         h = sg[["symbol", score_col]].dropna().sort_values(score_col)
         if len(h) < max(10, int(min_names * pct)):
             continue
@@ -867,9 +950,13 @@ def summarize_ic(ic: pd.DataFrame, horizon_days: int = 1) -> dict[str, float]:
     """
     empty = {
         "mean_rank_ic": math.nan,
+        "mean_ic": math.nan,
         "rank_ic_std": math.nan,
+        "ic_std": math.nan,
         "rank_ic_ir": math.nan,
+        "ic_ir": math.nan,
         "rank_ic_ir_raw": math.nan,
+        "ic_ir_raw": math.nan,
         "ic_dates": 0,
         "ic_dates_nonoverlap": 0,
     }
@@ -885,11 +972,30 @@ def summarize_ic(ic: pd.DataFrame, horizon_days: int = 1) -> dict[str, float]:
     nonoverlap = vals.iloc[::horizon_days]
     std_no = float(nonoverlap.std(ddof=1))
     icir_adj = float(nonoverlap.mean()) / (std_no + 1e-12) * math.sqrt(252.0 / horizon_days)
+    pearson_vals = ic.sort_values("date").get("ic", pd.Series(dtype="float64")).dropna()
+    if pearson_vals.empty:
+        pearson_mean = math.nan
+        pearson_std = math.nan
+        pearson_raw_ir = math.nan
+        pearson_ir = math.nan
+    else:
+        pearson_mean = float(pearson_vals.mean())
+        pearson_std = float(pearson_vals.std(ddof=1))
+        pearson_raw_ir = pearson_mean / (pearson_std + 1e-12) * math.sqrt(252.0)
+        pearson_nonoverlap = pearson_vals.iloc[::horizon_days]
+        pearson_no_std = float(pearson_nonoverlap.std(ddof=1))
+        pearson_ir = float(pearson_nonoverlap.mean()) / (pearson_no_std + 1e-12) * math.sqrt(
+            252.0 / horizon_days
+        )
     return {
         "mean_rank_ic": mean,
+        "mean_ic": pearson_mean,
         "rank_ic_std": std_daily,
+        "ic_std": pearson_std,
         "rank_ic_ir": icir_adj,
+        "ic_ir": pearson_ir,
         "rank_ic_ir_raw": raw_icir,
+        "ic_ir_raw": pearson_raw_ir,
         "ic_dates": int(len(vals)),
         "ic_dates_nonoverlap": int(len(nonoverlap)),
     }
@@ -982,6 +1088,92 @@ def evaluate_scores(
     return metrics
 
 
+def parse_regime_periods(spec: str | None) -> dict[str, tuple[pd.Timestamp, pd.Timestamp]]:
+    raw: dict[str, object]
+    if spec:
+        raw = json.loads(spec)
+    else:
+        raw = REGIME_PERIODS
+    out: dict[str, tuple[pd.Timestamp, pd.Timestamp]] = {}
+    for name, bounds in raw.items():
+        if not isinstance(bounds, (list, tuple)) or len(bounds) != 2:
+            raise ValueError(f"Regime '{name}' must be [start_date, end_date]")
+        out[str(name)] = (pd.Timestamp(bounds[0]), pd.Timestamp(bounds[1]))
+    return out
+
+
+def evaluate_regimes(
+    df: pd.DataFrame,
+    score_col: str,
+    target_col: str,
+    return_col: str,
+    args: argparse.Namespace,
+    out_dir: Path,
+    split_name: str,
+) -> dict[str, dict[str, float]]:
+    regimes = parse_regime_periods(args.regime_periods_json)
+    rows = []
+    out: dict[str, dict[str, float]] = {}
+    dates = pd.to_datetime(df["date"])
+    for name, (start, end) in regimes.items():
+        sub = df.loc[(dates >= start) & (dates <= end)].copy()
+        if sub.empty:
+            continue
+        metrics = evaluate_score_metrics_only(sub, score_col, target_col, return_col, args)
+        out[name] = metrics
+        rows.append({"regime": name, "start": str(start.date()), "end": str(end.date()), **metrics})
+    if rows:
+        pd.DataFrame(rows).to_csv(out_dir / f"{score_col}_{split_name}_regime_metrics.csv", index=False)
+    return out
+
+
+def evaluate_score_metrics_only(
+    df: pd.DataFrame,
+    score_col: str,
+    target_col: str,
+    return_col: str,
+    args: argparse.Namespace,
+) -> dict[str, float]:
+    periods_per_year = 252.0 / args.rebalance_every
+    horizon_days = int(getattr(args, "label_horizon_days", 1))
+    ic = spearman_by_date(df, score_col, target_col, args.min_names_per_date)
+    spread = decile_spread_by_date(
+        df, score_col, target_col, args.long_short_pct, args.min_names_per_date
+    )
+    bt = run_backtest(
+        df,
+        score_col,
+        return_col,
+        args.long_short_pct,
+        args.rebalance_every,
+        args.transaction_cost_bps,
+        args.min_names_per_date,
+        args.sector_neutral,
+    )
+    return {
+        **summarize_ic(ic, horizon_days),
+        **summarize_spread(spread, periods_per_year),
+        **summarize_backtest(bt, periods_per_year),
+        "rows": int(len(df)),
+        "dates": int(df["date"].nunique()),
+    }
+
+
+def clean_json(value):
+    if isinstance(value, dict):
+        return {str(k): clean_json(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [clean_json(v) for v in value]
+    if isinstance(value, tuple):
+        return [clean_json(v) for v in value]
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating, float)):
+        out = float(value)
+        return out if math.isfinite(out) else None
+    return value
+
+
 def write_summary_markdown(
     out_path: Path,
     args: argparse.Namespace,
@@ -996,7 +1188,10 @@ def write_summary_markdown(
         f"- Target: `{args.target_col}`",
         f"- Portfolio return column: `{args.return_col}`",
         f"- Model: `{model_name}`",
+        f"- Feature variant: `{getattr(args, 'feature_variant_label', 'graph' if args.include_graph_embeddings else 'tabular')}`",
         f"- Feature count: {len(feature_cols)}",
+        f"- Graph embedding features: {sum(c in GRAPH_FEATURES for c in feature_cols)}",
+        f"- Supervised graph embedding features: {sum(c in SUPERVISED_GRAPH_FEATURES for c in feature_cols)}",
         f"- Train end: {args.train_end}",
         f"- Validation end: {args.val_end}",
         f"- Target horizon: {args.label_horizon_days} trading days",
@@ -1074,6 +1269,19 @@ def main() -> None:
     feature_cols = select_feature_columns(args, fmap)
     if args.include_graph_embeddings:
         feature_cols = list(dict.fromkeys(feature_cols + GRAPH_FEATURES))
+    if args.include_supervised_graph_embeddings:
+        feature_cols = list(dict.fromkeys(feature_cols + SUPERVISED_GRAPH_FEATURES))
+    graph_feature_cols = [c for c in feature_cols if c in GRAPH_FEATURES]
+    supervised_graph_feature_cols = [c for c in feature_cols if c in SUPERVISED_GRAPH_FEATURES]
+    if args.include_graph_embeddings and args.include_supervised_graph_embeddings:
+        feature_variant = "graph_supervised"
+    elif args.include_supervised_graph_embeddings:
+        feature_variant = "supervised_graph"
+    elif args.include_graph_embeddings:
+        feature_variant = "graph"
+    else:
+        feature_variant = "tabular"
+    args.feature_variant_label = feature_variant
     panel = load_panel(args, feature_cols, fmap)
     horizon_days = infer_horizon_days(args.target_col, args.return_col)
     embargo_days = resolve_embargo_days(horizon_days, args.embargo_days)
@@ -1100,6 +1308,9 @@ def main() -> None:
                 "date_min": str(panel["date"].min().date()),
                 "date_max": str(panel["date"].max().date()),
                 "features": len(feature_cols),
+                "feature_variant": feature_variant,
+                "graph_features": len(graph_feature_cols),
+                "supervised_graph_features": len(supervised_graph_feature_cols),
             },
             indent=2,
         )
@@ -1154,6 +1365,10 @@ def main() -> None:
         del x
 
     metrics: dict[str, dict[str, object]] = {"baseline_score": {}, "model_score": {}}
+    regime_metrics: dict[str, dict[str, dict[str, object]]] = {
+        "baseline_score": {},
+        "model_score": {},
+    }
     for split in ["val", "test"]:
         mask = eval_masks[split]
         if not mask.any():
@@ -1170,6 +1385,15 @@ def main() -> None:
                 args,
                 split,
                 out_dir,
+            )
+            regime_metrics[score_col][split] = evaluate_regimes(
+                split_df,
+                score_col,
+                EVAL_TARGET_COL,
+                EVAL_RETURN_COL,
+                args,
+                out_dir,
+                split,
             )
 
     feature_importance = pd.DataFrame({"feature": feature_cols})
@@ -1201,13 +1425,21 @@ def main() -> None:
     config = vars(args).copy()
     config["run_name"] = run_name
     config["model_resolved"] = model_name
+    config["feature_variant"] = feature_variant
     config["feature_count"] = len(feature_cols)
+    config["graph_feature_count"] = len(graph_feature_cols)
+    config["graph_feature_columns"] = graph_feature_cols
+    config["supervised_graph_feature_count"] = len(supervised_graph_feature_cols)
+    config["supervised_graph_feature_columns"] = supervised_graph_feature_cols
     config["label_horizon_days"] = horizon_days
     config["embargo_days_resolved"] = embargo_days
     config["split_audit"] = audit
     (out_dir / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
     pd.DataFrame({"feature": feature_cols}).to_csv(out_dir / "selected_features.csv", index=False)
     (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    (out_dir / "regime_metrics.json").write_text(
+        json.dumps(clean_json(regime_metrics), indent=2, allow_nan=False), encoding="utf-8"
+    )
     write_summary_markdown(out_dir / "summary.md", args, model_name, feature_cols, metrics, audit)
     print(f"Done. Results written to {out_dir}")
     print(json.dumps(metrics, indent=2))
