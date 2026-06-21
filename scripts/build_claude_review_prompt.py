@@ -186,10 +186,18 @@ def build_prompt(args: argparse.Namespace) -> str:
         f"You are {args.reviewer_name} acting as the independent reviewer for {args.author_name} work.\n",
         "Review the supplied repository status, diffs, and file contents. Do not edit files, run commands, "
         "or take over as the executor.\n",
-        "Find correctness bugs, regressions, missing tests, reproducibility issues, data leakage risks, "
-        "unsafe shell behavior, and documentation commands that would fail.\n",
+        "Review as a senior quantitative researcher / quant PM judging the final paper report, not mainly "
+        "as a coding assistant. The most important deliverable is the report's methodology, experiment "
+        "design, empirical evidence, and claim discipline.\n",
+        "Prioritize whether the paper has a defensible research question, benchmark, alpha narrative, "
+        "validation/test separation, transaction-cost and turnover treatment, regime analysis, ablations, "
+        "negative controls, survivorship-bias handling, and conclusions that follow from the reported results.\n",
+        "Then review implementation support: correctness bugs, regressions, missing tests, reproducibility "
+        "issues, data leakage risks, unsafe shell behavior, credential exposure, and documentation commands "
+        "that would fail.\n",
         "Return findings first, ordered by severity. For each finding include severity, file/line if possible, "
-        "impact, and the concrete fix. If there are no blocking issues, say that explicitly and list residual risk.\n",
+        "impact on the paper/report claim, and the concrete fix. If there are no blocking paper-level issues, "
+        "say that explicitly and list residual risk.\n",
         f"\nRepository: `{repo}`\n",
         f"Scope: `{scope}`\n",
         f"Generated: `{generated_at}`\n\n",

@@ -7,7 +7,11 @@ small, reviewable, and oriented around reproducibility.
 
 For non-trivial work, Codex is the default worker/executor. Codex edits files,
 runs local validation, and summarizes the modification scope. GitHub Copilot's
-Opus model is used only as an independent read-only reviewer.
+Opus model is used only as an independent read-only reviewer. For this project,
+the reviewer is primarily a paper/research reviewer, not a coding assistant:
+the final deliverable is the research report, so Opus should judge whether the
+paper's claims, methodology, experiments, statistical evidence, and PM-level
+research narrative are credible.
 
 Do not use Copilot CLI as a second executor in this repository unless the user
 explicitly asks for that. Running two coding agents against the same worktree
@@ -52,9 +56,21 @@ into a fresh Copilot Opus chat and save the response before continuing.
 
 Ask Copilot Opus to prioritize:
 
-- Correctness and regression risk in Python/shell research scripts.
-- Data leakage, survivorship bias, and horizon alignment for market data.
-- Reproducibility: deterministic paths, clear inputs/outputs, and dependency use.
-- Safety: no credential exposure, destructive commands, or accidental large-data
-  commits.
-- Documentation accuracy for commands that future runs will depend on.
+- Paper-level quant research judgment first: whether the report has a clear
+  investment/research question, a defensible benchmark, a believable alpha
+  claim, and a conclusion that follows from the evidence.
+- Experimental design: walk-forward split integrity, validation-vs-test
+  discipline, transaction-cost assumptions, capacity, turnover, regime
+  stability, ablations, negative controls, and whether reported improvements are
+  economically and statistically meaningful.
+- Market-data risks: leakage, survivorship bias, horizon alignment, corporate
+  actions, delisting treatment, universe definition, and whether the paper
+  overclaims beyond the available dataset.
+- Paper presentation: whether tables/figures support the headline, whether weak
+  results are framed honestly, whether failed methods are demoted, and whether
+  the final report reads like a credible quant PM / senior researcher review
+  artifact rather than a code demo.
+- Implementation/reproducibility only after the paper claims are assessed:
+  correctness and regression risk in Python/shell scripts, deterministic paths,
+  clear inputs/outputs, dependency use, documentation commands, credential
+  safety, destructive commands, and accidental large-data commits.
