@@ -66,7 +66,9 @@ Conclusion: capacity is plausible only at smaller scale; short-side liquidity an
 
 ## Survivorship Haircut
 
-This is a sensitivity overlay, not a correction. True correction requires point-in-time constituents plus delisting returns.
+This is an adverse sensitivity overlay, not a correction. For a long-short
+momentum tilt, missing delisters could affect either side of the book; true
+correction requires point-in-time constituents plus delisting returns.
 
 | scenario | annual delisting rate | delisting return | Sharpe after haircut |
 | --- | ---: | ---: | ---: |

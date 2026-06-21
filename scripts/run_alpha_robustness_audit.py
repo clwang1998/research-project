@@ -549,12 +549,12 @@ def survivorship_haircut(bt: pd.DataFrame, args: argparse.Namespace) -> pd.DataF
     rows = []
     if bt.empty:
         return pd.DataFrame()
-    short_exposure = 0.5
+    affected_book_weight = 0.5
     for item in args.survivorship_scenarios:
         name, rate, loss = item.split(":")
         annual_rate = float(rate)
         avg_delisting_return = float(loss)
-        annual_haircut = short_exposure * annual_rate * abs(avg_delisting_return)
+        annual_haircut = affected_book_weight * annual_rate * abs(avg_delisting_return)
         period_haircut = annual_haircut / periods_per_year
         adjusted = bt["net_return"] - period_haircut
         rows.append(
@@ -623,7 +623,7 @@ def write_markdown(
         "",
         md_table(survivorship),
         "",
-        "The haircut is a directional sensitivity overlay because the dataset lacks historical constituents and delisting returns. It turns a qualitative survivorship caveat into a numeric range.",
+        "The haircut is an adverse directional sensitivity overlay because the dataset lacks historical constituents and delisting returns. It applies annual delisting rate times average delisting loss to half the book; for a long-short momentum tilt the true sign is not proven without point-in-time constituents and delisting returns.",
         "",
         "## Run Metadata",
         "",

@@ -104,6 +104,10 @@ Survivorship haircut sensitivity:
 | base, 2% delisting at -30% | 0.951 |
 | stress, 5% delisting at -50% | 0.837 |
 
+This is an adverse sensitivity, not a correction. For a long-short momentum
+tilt, missing delisters could affect either side of the book; point-in-time
+constituents plus delisting returns are required to establish the true sign.
+
 ## Report Positioning
 
 The revised report should not claim that complex ML broadly beats momentum. The stronger, defensible statement is:

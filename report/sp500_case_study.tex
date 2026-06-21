@@ -73,11 +73,13 @@ correlated with momentum. Its Rank IC gain is negligible, the bootstrap Sharpe
 gap interval crosses zero, and the strict full-grid DSR/PBO audit rejects a
 production alpha interpretation.
 Momentum's status as the core benchmark is anchored mainly on the
-pre-registered daily IC confirmation (plain $t=3.54$; Newey--West lag-21
-$t=4.39$) and the external momentum literature, not on pretending that one
-35-period 30-day portfolio Sharpe is precise: the standalone 30-day momentum
-book has Sharpe $0.740$, mean-return $t=1.51$, and an i.i.d. bootstrap Sharpe
-interval of $[-0.22,1.85]$.
+pre-registered 1-day cross-sectional IC confirmation (plain $t=3.54$;
+Newey--West lag-21 $t=4.39$) and the external momentum literature, not on
+pretending that one 35-period 30-day portfolio Sharpe is precise. At traded
+horizons the same signal is lower-power: a focused HAC/block check gives
+hold-out block-bootstrap $t$ of 2.41/2.13/1.89/1.85 at 5/10/20/30 days, and the
+standalone 30-day momentum book has Sharpe $0.740$, mean-return $t=1.51$, and
+an i.i.d. bootstrap Sharpe interval of $[-0.22,1.85]$.
 
 % ===========================================================================
 \section{Data}
@@ -113,9 +115,10 @@ deduplicated; all 503 tickers have sector and sub-industry labels.
 \textbf{Survivorship bias.} The constituent list is effectively the
 \emph{current} membership applied to history, so firms that went bankrupt, were
 delisted, or were acquired (Enron, Lehman, Bear Stearns, WaMu, Sears, Kodak,
-Yahoo, Celgene, Xilinx, \dots) are absent. This biases backtests optimistically
-and is discussed quantitatively in \S\ref{sec:discussion}. We do not claim to
-correct it; we bound its impact and avoid designs that amplify it.
+Yahoo, Celgene, Xilinx, \dots) are absent. This is a major current-membership
+bias, although the sign for a long--short momentum sleeve is not identified
+without delisting returns and side-specific holdings. We discuss it
+quantitatively in \S\ref{sec:discussion}; we do not claim to correct it.
 
 % ===========================================================================
 \section{Feature Engineering}
@@ -506,11 +509,15 @@ shows economically sensible bands: short reversal signals are negative at
 1--5 days, low-risk variables flip sign from short to longer horizons, and
 Amihud illiquidity is the discovery-period champion across 20--60 days, but the
 2022+ confirmation step is much harsher (Table~\ref{tab:frequency_confirm}).
-Momentum is the only signal with a positive, significant, and stronger hold-out
-$t$-stat. Amihud's in-sample strength collapses from $t=5.51$ to $t=0.41$,
-volume shock flips sign, and reversal keeps the expected sign but is weak. This
-is a clean warning that attractive in-sample IC is not reliable even for
-single-factor economics, not just for ML models.
+At its native 1-day confirmation horizon, momentum is the only signal with a
+positive, significant, and stronger hold-out $t$-stat. Amihud's in-sample
+strength collapses from $t=5.51$ to $t=0.41$, volume shock flips sign, and
+reversal keeps the expected sign but is weak. A follow-up traded-horizon
+momentum check using \texttt{report/artifacts/momentum\_ic\_traded\_horizons/}
+keeps the horizon seam explicit: block-bootstrap $t$ is 2.41 at 5d, 2.13 at
+10d, 1.89 at 20d, and 1.85 at 30d. This is a clean warning that attractive
+in-sample IC is not reliable even for single-factor economics, not just for ML
+models.
 
 \begin{table}[H]
   \centering
@@ -533,7 +540,7 @@ single-factor economics, not just for ML models.
     Sign stable, but too weak. \\
     Low-risk block & 1d & -0.432 to -0.793 & -1.62 to -2.97 & $\approx 0$ &
     Vol/idiosyncratic-vol/beta effect decays. \\
-    \texttt{volume\_z\_20d} & 60d & 0.532 & 1.99 & -1.93 &
+    \texttt{volume\_z\_20d} & 60d & 0.514 & 1.93 & -1.93 &
     Sign flips on the hold-out. \\
     \bottomrule
   \end{tabular}
@@ -586,7 +593,8 @@ sleeve role and lower turnover, not for raw performance dominance.
   Route~B has $N=35$ non-overlapping periods; the standalone momentum Sharpe
   bootstrap CI is $[-0.22,1.85]$ and the overlay bootstrap Sharpe CI is
   $[0.019,1.796]$. Full-grid DSR is $0.003$ over 884 searched trials
-  (same-target DSR $0.814$ over 14 trials), and CSCV PBO is 50\%. The model is
+  (same-target DSR $0.814$ over 14 trials), and CSCV PBO is 50\% over 20 splits,
+  so the overfit estimate is adverse but not precise. The model is
   a candidate residual sleeve, not a replacement for momentum; overlay IC/ICIR
   is reported under the same canonical raw-label convention as the standalone
   momentum row. The paired increment test uses archived returns in
@@ -701,7 +709,7 @@ independent confirmation.
     Bootstrap Sharpe 95\% CI & [0.019, 1.796] & Positive but wide. \\
     DSR, same-target trials & 0.814 & Encouraging within the 14-trial 30d target search. \\
     DSR, full grid trials & 0.003 & 0.987 Sharpe is below the 884-trial expected-max null of 1.512. \\
-    CSCV PBO & 50.0\% & High overfit risk across 28 compact Route~B strategies. \\
+    CSCV PBO & 50.0\% & High but low-precision overfit risk across 28 strategies and 20 splits. \\
     Fama--MacBeth signal $t$-stat & 0.05 & No convincing independent residual-alpha coefficient. \\
     Factor-neutral Sharpe, return, FM $t$ & 1.006; 8.27\%$\rightarrow$5.17\%; 0.05 & Turnover rises 0.49$\rightarrow$0.70; no independent residual-alpha coefficient. \\
     Capacity Sharpe at \$100M / \$1B & 0.948 / 0.864 & Capacity is plausible at modest scale; participation rises at \$1B. \\
@@ -791,7 +799,7 @@ passed the Route~B deflation/attribution audit.
     20d & LightGBM \emph{(val-selected, market)} & 0.028 & 0.39 (2.47) & 0.49 & 5.5\% & 0.64 \\
     20d & Ridge (market)                        & 0.029 & 0.54 (2.27) & 0.76 & \textbf{9.8\%} & 0.61 \\
     \midrule
-    30d & Momentum baseline (sector)            & 0.028 & 0.70 (3.04) & 0.74 & 7.8\% & \textbf{0.40} \\
+    30d & Momentum baseline (sector)            & 0.028 & 0.70 (3.04) & 0.74 & 7.8\% & 0.40 \\
     30d & MLP \emph{(val-selected, sector)}      & 0.027 & 0.92 (3.88) & 0.69 & 6.5\% & 0.70 \\
     30d & LightGBM (sector; val ICIR 0.08, $<1.512$ null)  & 0.036 & 0.80 (4.34) & 1.23 & 13.0\% & 0.63 \\
     30d & Route B overlay, $\lambda=0.2$         & 0.028 & 0.76 (3.07) & 0.99 & 8.3\% & 0.49 \\
@@ -824,8 +832,10 @@ experiment. For the Route~B 30-day overlay, raw hold-out Sharpe is 0.987 and the
 bootstrap 95\% Sharpe interval is $[0.019,1.796]$. The same-target DSR is 0.814,
 but full-grid DSR falls to 0.003 because the 884-trial expected-max null Sharpe
 is 1.512, above both the observed overlay Sharpe 0.987 and the visually stronger
-but non-selected LightGBM 30-day Sharpe 1.226; CSCV PBO is 50\%. This is the
-most important statistical conclusion: the overlay is a materially better
+but non-selected LightGBM 30-day Sharpe 1.226; CSCV PBO is 50\%, but only across
+28 compact strategies and 20 splits, so it is an adverse instability flag rather
+than a precise probability. This is the most important statistical conclusion:
+the overlay is a materially better
 research lead than the old graph/MLP direction, but still not a statistically
 deflated production alpha. The paired overlay-minus-momentum test reinforces
 that conclusion: the overlay is 93\% correlated with momentum, reduces period
@@ -866,13 +876,15 @@ also verified that a no-embargo diagnostic inflates metrics, confirming the
 controls bind.
 
 \textbf{Survivorship bias.} The dataset is current-membership-on-history, so
-results are optimistically biased and cannot be treated as a production backtest.
-The audit adds a numeric sensitivity rather than only a caveat: applying a
-delisting overlay of annual delisting rate $\times$ average delisting loss to
-the short-side exposure leaves the Route~B overlay Sharpe at 0.951 in a base
-case (2\% annual delisting rate, $-30\%$ average delisting return) and 0.839 in
-a stress case (5\%, $-50\%$). This bound is still not a true correction; the
-right fix is point-in-time constituents and delisting returns.
+the backtest is not point-in-time and cannot be treated as production evidence.
+The audit adds a numeric adverse sensitivity rather than only a caveat:
+applying annual delisting rate $\times$ average delisting loss to half the book
+leaves the Route~B overlay Sharpe at 0.951 in a base case (2\% annual delisting
+rate, $-30\%$ average delisting return) and 0.837 in a stress case (5\%,
+$-50\%$). This is not a true correction, and its sign is not proven for a
+long--short momentum tilt because missing delisters could have appeared on
+either side of the book. The right fix is point-in-time constituents and
+delisting returns.
 
 \textbf{Kronos and survivorship bias.} Kronos is not used as a reported alpha
 model in this paper. Its relevant role is only as a possible future data-universe
@@ -928,11 +940,12 @@ selection, explicit leakage controls, and a single-factor baseline that every
 model must clear in a clearly specified metric. The realistic conclusion is
 sobering: broad multivariate, graph, MLP, and residual-overlay searches do
 \emph{not} pass a production-grade alpha audit. Momentum is the only clearly
-confirmed raw factor by IC confirmation and prior evidence, while its 30-day
-portfolio Sharpe is still imprecise over only 35 non-overlapping periods
+confirmed raw factor by 1-day IC confirmation and prior evidence, while its
+30-day implementation is still imprecise over only 35 non-overlapping periods
 ($t=1.51$, bootstrap CI $[-0.22,1.85]$). Its daily IC confirmation is more
 robust: a 21-day block bootstrap puts the hold-out mean Rank IC CI at
-$[0.0115,0.0297]$ and Newey--West lag-21 gives $t=4.39$. Even the best
+$[0.0115,0.0297]$ and Newey--West lag-21 gives $t=4.39$; the traded-horizon
+HAC/block evidence is positive but only marginal by 20--30 days. Even the best
 Route~B residual sleeve
 remains exploratory. Its 2022--2026 point estimate improves the 30-day momentum
 book's Sharpe from $0.740$ to $0.987$ and drawdown from $-13.8\%$ to $-7.3\%$,
