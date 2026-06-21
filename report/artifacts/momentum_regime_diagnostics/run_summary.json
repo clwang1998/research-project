@@ -1,0 +1,29 @@
+{
+  "signal_col": "cs_rank_mom_252d_skip_21d",
+  "sector_neutral": true,
+  "bootstrap_samples_requested": 10000,
+  "seed": 20260622,
+  "horizons": [
+    5,
+    30
+  ],
+  "regimes": {
+    "GFC+recovery_2008_2011": [
+      "2008-01-01",
+      "2011-12-31"
+    ],
+    "QE_lowvol_2012_2016": [
+      "2012-01-01",
+      "2016-12-31"
+    ],
+    "latecycle_covid_2017_2021": [
+      "2017-01-01",
+      "2021-12-31"
+    ],
+    "post2022_holdout_2022_2026": [
+      "2022-01-01",
+      "2026-12-31"
+    ]
+  },
+  "interpretation": "Calendar-slice diagnostic for a no-fit momentum signal. This is not a CPCV distribution or independent model retraining exercise."
+}
