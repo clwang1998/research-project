@@ -62,10 +62,14 @@ single-factor momentum baseline $\rightarrow$ compact Ridge/XGBoost models
 trained on factor-neutral residual labels $\rightarrow$ a validation-selected
 momentum-plus-residual overlay $\rightarrow$ rank IC / ICIR, DSR/PBO,
 style-neutral attribution, capacity, and cost-aware portfolio backtests. The
-headline result is negative and deflation-first: on this current-membership
-S\&P~500 dataset, no broad multivariate, graph, MLP, or residual overlay
-construction produces statistically deflated alpha beyond the 12--1 momentum
-benchmark. The 30-trading-day sector-neutral residual overlay reduces
+research decision is simple: on price/volume plus sector metadata alone, keep
+low-turnover 12--1 momentum as the tradable benchmark, do not promote the
+ML/graph/residual models as standalone alpha, and spend the next research
+dollar on a true point-in-time universe with delisting returns. The headline
+result is negative and deflation-first: on this current-membership S\&P~500
+dataset, no broad multivariate, graph, MLP, or residual overlay construction
+produces statistically deflated alpha beyond the 12--1 momentum benchmark. The
+30-trading-day sector-neutral residual overlay reduces
 volatility and drawdown versus standalone momentum, but it does not add
 statistically distinguishable return: over 35 non-overlapping test periods the
 paired return-difference $t$-stat is only 0.25 and the overlay is 93\%
@@ -117,8 +121,11 @@ deduplicated; all 503 tickers have sector and sub-industry labels.
 delisted, or were acquired (Enron, Lehman, Bear Stearns, WaMu, Sears, Kodak,
 Yahoo, Celgene, Xilinx, \dots) are absent. This is a major current-membership
 bias, although the sign for a long--short momentum sleeve is not identified
-without delisting returns and side-specific holdings. We discuss it
-quantitatively in \S\ref{sec:discussion}; we do not claim to correct it.
+without delisting returns and side-specific holdings. The metadata include
+\texttt{date\_added}, which supports a partial point-in-time inclusion check:
+72 current members were added on or after the 2022 hold-out start. We use that
+field as a sensitivity in \S\ref{sec:discussion}, but still do not claim a true
+survivorship correction because deleted names and delisting returns are missing.
 
 % ===========================================================================
 \section{Feature Engineering}
@@ -202,7 +209,8 @@ block also includes the signals most likely to be orthogonal to 12--1 momentum:
 1--5 day reversal, Amihud liquidity/impact, volume shocks, market breadth,
 cross-sectional dispersion, and rolling idiosyncratic return after market-beta
 removal. As a usefulness check, we
-ran a single-factor daily rank-IC scan on the cleaned 2008--2026 panel using the
+ran a single-factor daily rank-IC scan on the cleaned 2008--2026 panel (after
+long rolling-window warm-up for 12--1 momentum and linkage features) using the
 same T+1 label shift, bottom-10\% liquidity filter, and 1\%/99\% within-date
 winsorization as the modeling pipeline. Table~\ref{tab:feature_sanity} shows the
 largest effects in the core set. The magnitudes are small, as expected for daily
@@ -600,7 +608,9 @@ sleeve role and lower turnover, not for raw performance dominance.
   momentum row. The paired increment test uses archived returns in
   \texttt{report/artifacts/route\_b\_paired\_increment/}; the standalone
   momentum bootstrap uses
-  \texttt{report/artifacts/route\_b\_momentum\_baseline/}.}\label{tab:route_b_30d}
+  \texttt{report/artifacts/route\_b\_momentum\_baseline/}. Annualized returns
+  use arithmetic mean return times rebalance frequency; the paired artifact
+  also stores geometric compounded figures.}\label{tab:route_b_30d}
   \scriptsize
   \setlength{\tabcolsep}{3pt}
   \begin{tabular}{lccccccc}
@@ -697,10 +707,12 @@ independent confirmation.
   \caption{P0 robustness audit for the Route B 30-day residual momentum overlay. DSR is
   the probabilistic Sharpe ratio after deflating for the expected best result
   across the searched configurations; PBO is CSCV probability of backtest
-  overfitting.}\label{tab:p0audit}
+  overfitting. DSR uses a pooled cross-trial Sharpe dispersion across
+  heterogeneous searched horizons/targets, a conservative approximation rather
+  than a claim that all trials are exchangeable.}\label{tab:p0audit}
   \scriptsize
-  \setlength{\tabcolsep}{4pt}
-  \begin{tabular}{lrl}
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{p{0.26\linewidth}p{0.25\linewidth}p{0.41\linewidth}}
     \toprule
     Check & Result & Interpretation \\
     \midrule
@@ -713,6 +725,7 @@ independent confirmation.
     Fama--MacBeth signal $t$-stat & 0.05 & No convincing independent residual-alpha coefficient. \\
     Factor-neutral Sharpe, return, FM $t$ & 1.006; 8.27\%$\rightarrow$5.17\%; 0.05 & Turnover rises 0.49$\rightarrow$0.70; no independent residual-alpha coefficient. \\
     Capacity Sharpe at \$100M / \$1B & 0.948 / 0.864 & Capacity is plausible at modest scale; participation rises at \$1B. \\
+    PIT inclusion sensitivity & Mom. 0.741$\rightarrow$0.446; overlay 0.987$\rightarrow$0.725 & Partial inclusion-side check weakens both rows; overlay remains exploratory. \\
     Survivorship stress-haircut Sharpe & 0.837 & Sensitivity does not destroy the result, but remains uncorrected. \\
     \bottomrule
   \end{tabular}
@@ -832,9 +845,12 @@ experiment. For the Route~B 30-day overlay, raw hold-out Sharpe is 0.987 and the
 bootstrap 95\% Sharpe interval is $[0.019,1.796]$. The same-target DSR is 0.814,
 but full-grid DSR falls to 0.003 because the 884-trial expected-max null Sharpe
 is 1.512, above both the observed overlay Sharpe 0.987 and the visually stronger
-but non-selected LightGBM 30-day Sharpe 1.226; CSCV PBO is 50\%, but only across
-28 compact strategies and 20 splits, so it is an adverse instability flag rather
-than a precise probability. This is the most important statistical conclusion:
+but non-selected LightGBM 30-day Sharpe 1.226. This DSR pools heterogeneous
+horizons and target families into one cross-trial null dispersion, which is a
+conservative penalty for the overlay, not a clean family-wise theorem. CSCV PBO
+is 50\%, but only across 28 compact strategies and 20 splits, so it is an
+adverse instability flag rather than a precise probability. This is the most
+important statistical conclusion:
 the overlay is a materially better
 research lead than the old graph/MLP direction, but still not a statistically
 deflated production alpha. The paired overlay-minus-momentum test reinforces
@@ -877,14 +893,24 @@ controls bind.
 
 \textbf{Survivorship bias.} The dataset is current-membership-on-history, so
 the backtest is not point-in-time and cannot be treated as production evidence.
-The audit adds a numeric adverse sensitivity rather than only a caveat:
-applying annual delisting rate $\times$ average delisting loss to half the book
-leaves the Route~B overlay Sharpe at 0.951 in a base case (2\% annual delisting
-rate, $-30\%$ average delisting return) and 0.837 in a stress case (5\%,
-$-50\%$). This is not a true correction, and its sign is not proven for a
-long--short momentum tilt because missing delisters could have appeared on
-either side of the book. The right fix is point-in-time constituents and
-delisting returns.
+The available \texttt{date\_added} field supports an inclusion-side sensitivity:
+72 current members were added on or after 2022-01-01, and after the baseline
+controls 61 such symbols appear in hold-out rows that a PIT inclusion filter
+removes. Recomputing the 30d sector-neutral momentum baseline with
+\texttt{sp500\_member\_asof==1} reduces Sharpe from 0.741 to 0.446, annual net
+return from 7.79\% to 3.91\%, and worsens max drawdown from -13.8\% to -17.5\%.
+Applying the same filter post-training to the selected Route~B prediction file
+and rebuilding the overlay score reduces Sharpe from 0.987 to 0.725, annual net
+return from 8.27\% to 5.69\%, and worsens max drawdown from -7.3\% to -10.0\%
+(\texttt{report/artifacts/pit\_inclusion\_sensitivity/}). This is an important
+hit to the point estimates, not a new validation pass. The audit also adds a
+delisting-side parametric sensitivity: applying annual delisting rate $\times$
+average delisting loss to half the book leaves the Route~B overlay Sharpe at
+0.951 in a base case (2\% annual delisting rate, $-30\%$ average delisting
+return) and 0.837 in a stress case (5\%, $-50\%$). Neither exercise is a true
+correction, and the sign is not proven for a long--short momentum tilt because
+missing delisters could have appeared on either side of the book. The right fix
+is point-in-time constituents and delisting returns.
 
 \textbf{Kronos and survivorship bias.} Kronos is not used as a reported alpha
 model in this paper. Its relevant role is only as a possible future data-universe
@@ -961,6 +987,7 @@ point-in-time constituents, delisting returns, one canonical portfolio
 evaluator, stronger style-factor attribution, and lower-turnover execution
 tests. The useful output is the triage: keep 12--1 momentum as the core
 benchmark, treat residual ML as a small research sleeve, and make DSR/PBO,
-capacity, and turnover part of model selection rather than post-hoc decoration.
+PIT survivorship, capacity, and turnover part of model selection rather than
+post-hoc decoration.
 
 \end{document}
