@@ -28,12 +28,11 @@ where the XGBoost model is `xgb_balanced` trained on the 30d factor-neutral resi
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | momentum baseline | 0.0282 | 0.698 | 0.740 | 7.78% | -13.83% | 0.401 |
 | Route B overlay, val-selected | 0.0283 | 0.768 | 0.970 | 8.08% | -6.96% | 0.492 |
+| Route B overlay, diagnostic lambda=0.3 | 0.0280 | 0.806 | 1.201 | 9.98% | -6.10% | 0.521 |
 
 Use the validation-selected `lambda=0.2` line as the report-safe positive
-result. The diagnostic `lambda=0.3` line exists in
-`output/model_search/route_b_factor_residual_alpha_core_20260622_30d_ultra_blend_metrics.csv`
-with test Sharpe 1.20, but it is intentionally excluded from the main table
-because it was not the validation-selected overlay weight.
+result. The diagnostic `lambda=0.3` line is shown for transparency but was not
+the validation-selected overlay weight.
 
 The synchronized local artifacts also preserve the standard-baseline
 cross-check: `eval_momentum_baseline.py` reproduces the 30d signal metrics and

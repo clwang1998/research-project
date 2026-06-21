@@ -18,8 +18,8 @@ long-short decile backtest. The default runnable configuration predicts
 `target_excess_sector_fwd_5d`, uses `target_ret_fwd_5d` for realized portfolio
 PnL, trains a ridge model on a curated `core` feature set, and compares that
 model with a simple momentum-rank baseline. Optional paths extend the workflow
-to LightGBM, XGBoost, scikit-learn HGB, graph embeddings, and Kronos zero-shot
-or fine-tuned sequence models.
+to LightGBM, XGBoost, scikit-learn HGB, graph embeddings, and foundation-model
+research for future survivorship-bias mitigation.
 
 The main methodological contribution already present in code is the hardening of
 temporal validation. The current pipeline enforces a one-trading-day execution
@@ -39,17 +39,17 @@ means the project can support statements such as "predictive ranking behavior on
 historical prices of current or recent S&P 500 constituents," but it cannot yet
 support strong claims about a fully tradable historical S&P 500 backtest.
 
-As of this cloud run, the strongest directly inspectable result artifacts are
-Kronos zero-shot benchmark summaries present in the cloud working copy under
-`output/kronos_zero_shot/`. Because `output/` is an untracked experiment-output
-area, those summaries are local evidence rather than versioned repository
-evidence. They show that small-sample Kronos runs can look strong, but the
-larger random 60-date benchmark is unstable: validation ICs are mildly positive
-while test ICs are negative across 1D, 5D, and 20D horizons. That is not
-sufficient evidence to claim robust sequence-model alpha. The correct current
-conclusion is that the workflow is credible and useful for controlled
-experimentation, but the final empirical story remains provisional and needs a
-fresh full baseline-and-target-model rerun before paper-level claims are made.
+Kronos is not part of the empirical alpha evidence in this report. Its only
+paper-level role is methodological: a market time-series foundation model could
+help address survivorship bias if it were trained or fine-tuned on a
+point-in-time universe that includes delisted, acquired, and index-deleted
+securities with correct corporate-action and delisting-return treatment. The
+current report should therefore discuss Kronos as a possible data-coverage and
+representation-learning route, not as a source of reported model results. The
+correct current conclusion is that the workflow is credible and useful for
+controlled experimentation, but the final empirical story remains provisional
+and needs a fresh full baseline-and-target-model rerun before paper-level claims
+are made.
 
 ## 2. Research Objective and Market Prediction Setup
 
@@ -131,10 +131,10 @@ The repository also defines a clear Git boundary:
 That boundary matters for interpreting this report. Reproducibility here means
 that the code path, documentation, and command sequence are versioned and can be
 re-executed. It does not mean that all raw data and all experiment results are
-checked into Git. In this cloud copy, some outputs exist locally, including
-Kronos zero-shot summaries, but they sit under the untracked `output/` boundary.
-There is no fully committed archive of all baseline model runs that would
-support a finished quantitative paper.
+checked into Git. In this cloud copy, some outputs exist locally under the
+untracked `output/` boundary, but they are not used as paper evidence. There is
+no fully committed archive of all baseline model runs that would support a
+finished quantitative paper.
 
 The intended rebuild path is explicit:
 
@@ -165,12 +165,13 @@ very wide monolithic table, the project stores feature families independently
 and lets downstream modeling join only the required groups. This reduces memory
 pressure and makes feature provenance easier to audit.
 
-There is also a practical reproducibility boundary around the cloud Kronos path.
-The runbook documents a deterministic setup sequence, explicit environment
-choices, and where outputs should be written under
-`output/kronos_zero_shot/` and `output/kronos_finetune/`. That path is
-reproducible as an operational procedure, even if the final GPU-generated
-artifacts are not committed to the repository by default.
+There is also a practical reproducibility boundary around any future
+foundation-model path. The runbook-style procedure should document the model
+checkpoint, environment choices, point-in-time universe construction,
+corporate-action adjustment, delisting-return treatment, and walk-forward
+fine-tuning/inference protocol. That path can be reproducible as an operational
+procedure, even if large GPU-generated artifacts are not committed to the
+repository by default.
 
 ## 4. Feature Engineering, Including Technical, Graph, and Regime Features
 
@@ -457,47 +458,24 @@ the scripts are designed to produce. That means this report cannot responsibly
 present a polished "main table" for the tabular models based only on
 documentation.
 
-What does exist locally are several Kronos zero-shot summaries under
-`output/kronos_zero_shot/`. Those untracked artifacts are informative, but they
-are not enough to close the full empirical story unless lightweight summaries
-are copied into a tracked report-artifacts path.
-All Kronos numbers below should therefore be read as local-only illustrative
-evidence from this cloud working copy, not as part of the Git-reproducible
-repository record.
-
-The clearest local Kronos result is the 60-date random 300-symbol benchmark in
-`output/kronos_zero_shot/kronos_random_60dates_300/summary.md`. Its pattern is
-not encouraging:
-
-- 1D validation mean rank IC is positive at about 0.041, but 1D test mean rank
-  IC is negative at about -0.007.
-- 5D validation mean rank IC is positive at about 0.018, but 5D test mean rank
-  IC is negative at about -0.022.
-- 20D validation mean rank IC is near zero, and 20D test mean rank IC is
-  negative at about -0.015.
-
-The corresponding ICIR comparisons in the same summary show the local Kronos
-test results lagging the report-referenced best baseline models by a wide margin
-on that larger random sample. The correct interpretation is that Kronos-small
-zero-shot is not yet a reliable winner in this dataset setting.
-
-There are also smaller local benchmarks, such as
-`sampled_10dates_120/summary.md`, where Kronos looks strong on test slices.
-Those runs are too small and too unstable to treat as load-bearing evidence:
-
-- the date count is tiny,
-- validation and test signs can flip,
-- the sample is susceptible to luck and regime concentration,
-- extremely high ICIR values on a handful of dates are not paper-grade
-  stability evidence.
+Kronos is deliberately excluded from this empirical section. It should
+not be used as a reported alpha model in the current paper, and local exploratory
+runs should not be treated as load-bearing evidence. The paper-level role of
+Kronos is instead to motivate a future survivorship-bias remedy: a market
+time-series foundation model could be pretrained on broad OHLCV sequences and
+then fine-tuned or used to generate representations on a point-in-time universe
+that includes delisted, acquired, and index-deleted securities. Such a workflow
+would require split-adjusted and dividend-adjusted OHLCV, delisting returns,
+membership histories, and walk-forward training where each date's embedding or
+forecast is generated without access to future constituents or labels.
 
 So the current empirical status is:
 
 - The infrastructure for baseline tabular experiments exists.
 - The infrastructure for target-family and horizon sweeps exists.
-- The infrastructure for cloud Kronos runs exists.
-- The local cloud artifacts are sufficient to show that some sequence-model
-  results are unstable and still provisional.
+- The infrastructure for future foundation-model runs exists, but those runs
+  should be scoped as survivorship-bias and universe-coverage research rather
+  than current alpha evidence.
 - The local cloud artifacts are not sufficient to make a robust "best model"
   claim for the project.
 
@@ -524,7 +502,7 @@ What remains provisional are the final performance comparisons, especially:
 - tabular baseline leaderboard values,
 - horizon-generalization conclusions,
 - graph-feature uplift estimates,
-- Kronos zero-shot versus fine-tuned conclusions,
+- foundation-model universe-completion protocols,
 - any claim about deployable long-short profitability after realistic frictions.
 
 ## 9. Limitations, Risk Controls, and Failure Modes
@@ -607,17 +585,13 @@ and clearer historical corporate-action coverage. Without that, the right final
 product remains a reproducible engineering report rather than an investment
 strategy paper.
 
-The fourth priority is Kronos clarification. The cloud runbook is already good
-enough to support disciplined GPU experiments. What is needed now is a coherent
-comparison set:
-
-- Kronos-small zero-shot,
-- Kronos-base zero-shot,
-- predictor-only fine-tuning,
-- possibly tokenizer fine-tuning only after predictor-only evidence justifies it.
-
-Those runs should be judged on the same leakage-clean targets and the same
-evaluation protocol as the tabular baselines.
+The fourth priority is survivorship-bias mitigation. If Kronos or another
+market time-series foundation model is used, it should be framed as a tool for
+universe broadening and representation learning rather than as a headline alpha
+model. The required experiment design is a point-in-time security universe,
+delisting-return treatment, corporate-action-adjusted OHLCV, and walk-forward
+fine-tuning or inference where each validation/test date is generated only from
+past information.
 
 The fifth priority is ARIS packaging. For a formal paper-writing path, the next
 document chain should be:

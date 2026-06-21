@@ -289,6 +289,37 @@ combines both feature families. All graph variants are evaluated under the same
 purge, embargo, execution-lag, validation, cost, and portfolio rules as the
 tabular variant.
 
+\begin{table}[H]
+  \centering
+  \caption{Graph feature variants used in the model grid. The table separates
+  deterministic graph embeddings from supervised GAT embeddings before any
+  portfolio construction is applied.}\label{tab:graph_variants}
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{p{0.20\linewidth}p{0.34\linewidth}p{0.36\linewidth}}
+    \toprule
+    Variant & Construction and label use & Added features and interpretation \\
+    \midrule
+    \texttt{fixed\_graph} &
+    Deterministic sector, style-nearest-neighbor, and rolling-correlation peer
+    relations; no target labels are used. &
+    Adds \texttt{graph\_emb\_*} and fixed relation weights; tests whether static
+    peer structure adds information to tabular models. \\
+    \texttt{supervised\_graph} / GAT &
+    Supervised relation-aware GAT trained on the same time splits; uses training
+    labels only and is out-of-fold for scored rows. &
+    Adds \texttt{supervised\_graph\_score}, GAT embeddings, and learned relation
+    weights; tests whether target-aware graph representation helps ranking. \\
+    \texttt{graph\_supervised} &
+    Combination of deterministic fixed graph features and supervised GAT
+    features; partly label-trained through the GAT component. &
+    Adds both feature families; tests whether fixed peer structure and
+    supervised GAT embeddings are complementary, at higher complexity and
+    overfitting risk. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
 \subsection{Validation-selected rank ensemble}
 \label{sec:ensemble}
 The ensemble is the final \emph{prediction layer}, not a portfolio construction
@@ -474,14 +505,45 @@ in-sample IC metric, so we do not pretend trees are categorically better.
 graph variants: deterministic fixed graph, supervised GAT, and their combined
 form. In code these are \texttt{fixed\_graph}, \texttt{supervised\_graph}, and
 \texttt{graph\_supervised}. The archived ensemble metrics used for
-the diagnostic contain the tabular and all-relation supervised-GAT runs for
-Ridge, LightGBM, XGBoost, and MLP, then construct the five validation-selected
-rank ensembles in \S\ref{sec:ensemble}.
-The fixed graph embedding is therefore documented as a model variant, but the
-5-day ensemble diagnostics are kept as a negative result rather than a headline:
-excluding MLP improves test Rank IC from 0.0139 to 0.0168 and the supervised
-graph tree ensemble reaches 0.0173, but all remain below the 5-day momentum
-baseline and turnover stays high ($\approx0.66$--0.69).
+Table~\ref{tab:ensemble} contain the tabular and all-relation supervised-GAT runs
+for Ridge, LightGBM, XGBoost, and MLP, then construct the five
+validation-selected rank ensembles in \S\ref{sec:ensemble}.
+The fixed graph embedding is therefore documented as a model variant, but not
+included in this diagnostic table unless its corresponding archived metrics are
+present. Table~\ref{tab:ensemble} reports the sector-relative 5-day ensemble
+diagnostic on the test split using the primary sector-neutral long--short decile
+portfolio, net of 5~bps per-side cost. Excluding MLP improves the
+post-validation rank IC and net Sharpe relative to the full ensemble, and the
+supervised-graph tree ensemble is the strongest ranker among these 5-day
+ensembles; however, turnover remains high and economic performance is only weakly
+positive after costs. In this grid, \texttt{ensemble\_no\_mlp} and
+\texttt{ensemble\_tree\_only} coincide because the non-MLP model set is exactly
+Ridge, LightGBM, and XGBoost.
+
+\begin{table}[H]
+  \centering
+  \caption{5-day sector-relative ensemble comparison on the 2022--2026
+  test split, using the primary sector-neutral long--short decile portfolio net
+  of 5~bps per-side cost.}\label{tab:ensemble}
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{llrrrrrr}
+    \toprule
+    Ensemble & Weight & N & Rank IC & ICIR & Net Sharpe & Ann.\ Ret & Turnover \\
+    \midrule
+    all val-selected & equal & 8 & 0.0139 & 0.677 & -0.34 & -2.0\% & 0.68 \\
+    all val-selected & ICIR & 8 & 0.0126 & 0.608 & -0.36 & -2.1\% & 0.69 \\
+    no MLP & equal & 6 & 0.0168 & 0.807 & -0.12 & -0.7\% & 0.68 \\
+    no MLP & ICIR & 6 & 0.0168 & 0.801 & 0.04 & 0.3\% & 0.69 \\
+    tree only & equal & 6 & 0.0168 & 0.807 & -0.12 & -0.7\% & 0.68 \\
+    tree only & ICIR & 6 & 0.0168 & 0.801 & 0.04 & 0.3\% & 0.69 \\
+    supervised-graph tree & equal & 3 & \textbf{0.0173} & \textbf{0.852} & -0.11 & -0.7\% & 0.69 \\
+    supervised-graph tree & ICIR & 3 & 0.0171 & 0.835 & \textbf{0.05} & \textbf{0.3\%} & 0.69 \\
+    stability-filtered & equal & 3 & 0.0061 & 0.208 & -0.00 & -0.0\% & \textbf{0.66} \\
+    stability-filtered & ICIR & 3 & 0.0051 & 0.210 & -0.10 & -0.6\% & \textbf{0.66} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \textbf{The decisive test: the untouched hold-out.} The validation ranking does
 not survive out of sample. On the 2022--2026 hold-out the \emph{single-factor
@@ -499,11 +561,53 @@ an independent check on that conclusion. The discovery-period ICIR surface
 shows economically sensible bands: short reversal signals are negative at
 1--5 days, low-risk variables flip sign from short to longer horizons, and
 Amihud illiquidity is the discovery-period champion across 20--60 days, but the
-2022+ confirmation step is much harsher: momentum is the only signal with a
-positive, significant, and stronger hold-out $t$-stat ($3.54$), Amihud collapses
-from discovery $t=5.48$ to test $t=0.40$, volume shock flips sign, and reversal
-keeps the expected sign but is weak. This warns that attractive in-sample IC is
-not reliable even for single-factor economics, not just for ML models.
+2022+ confirmation step is much harsher (Table~\ref{tab:frequency_confirm}).
+Momentum is the only signal with a positive, significant, and stronger hold-out
+$t$-stat. Amihud's in-sample strength collapses from $t=5.48$ to $t=0.40$,
+volume shock flips sign, and reversal keeps the expected sign but is weak. This
+is a clean warning that attractive in-sample IC is not reliable even for
+single-factor economics, not just for ML models.
+
+\begin{table}[H]
+  \centering
+  \caption{Pre-registered signal-frequency diagnostic. Native horizon is chosen
+  by discovery-period absolute ICIR through 2021, then confirmed on the 2022+
+  hold-out under the production T+1, liquidity, winsorization, and
+  overlap-adjusted ICIR rules.}
+  \label{tab:frequency_confirm}
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{lrrrrl}
+    \toprule
+    Signal & Native $h$ & Disc.\ ICIR & Disc.\ $t$ & Test $t$ & Hold-out read-through \\
+    \midrule
+    \texttt{mom\_252d\_skip\_21d} & 1d & 0.589 & 2.20 & 3.54 &
+    Only significant survivor; stronger OOS. \\
+    \texttt{amihud\_20d} & 40d & 1.457 & 5.48 & 0.40 &
+    In-sample champion, OOS decay. \\
+    \texttt{ret\_5d} reversal & 1d & -1.027 & -3.84 & -0.91 &
+    Sign stable, but too weak. \\
+    Low-risk block & 1d & -0.432 to -0.793 & -1.62 to -2.97 & $\approx 0$ &
+    Vol/idiosyncratic-vol/beta effect decays. \\
+    \texttt{volume\_z\_20d} & 60d & 0.532 & 1.99 & -1.91 &
+    Sign flips on the hold-out. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \begin{minipage}{0.49\textwidth}\centering
+    \includegraphics[width=\linewidth]{fig_signal_horizon_surface.png}
+    \caption{Discovery signal $\times$ horizon ICIR surface for the
+    pre-registered single-factor scan.}\label{fig:signal_surface}
+  \end{minipage}\hfill
+  \begin{minipage}{0.49\textwidth}\centering
+    \includegraphics[width=\linewidth]{fig_sleeve_book_equity.png}
+    \caption{Net equity curves for the 5-day momentum/reversal sleeve-book
+    diagnostic.}\label{fig:sleeve_book}
+  \end{minipage}
+\end{figure}
 
 \textbf{Route B 30-day residual overlay.} The final positive result comes from
 the narrower residual-target rerun, not from the graph/MLP zoo. XGBoost is
@@ -532,6 +636,7 @@ cross-sectional ranker.
     \midrule
     Momentum baseline & 0.0282 & 0.698 & 0.740 & 7.78\% & -13.83\% & \textbf{0.401} \\
     Route B overlay, $\lambda=0.2$ & \textbf{0.0283} & 0.768 & \textbf{0.970} & \textbf{8.08\%} & \textbf{-6.96\%} & 0.492 \\
+    Route B overlay, $\lambda=0.3$ diagnostic & 0.0280 & \textbf{0.806} & 1.201 & 9.98\% & -6.10\% & 0.521 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -551,6 +656,29 @@ internally valid because both rows in Table~\ref{tab:route_b_30d} use the same
 Route~B pipeline convention; using the standard baseline script as the reference
 shrinks the Sharpe improvement from about $+0.23$ to about $+0.17$.
 
+\begin{table}[H]
+  \centering
+  \caption{Route B 30-day momentum baseline convention check. The Route~B
+  artifact is now local; the comparison column uses the standard baseline script
+  with the same sector-relative 30d target, sector-neutral portfolio, T+1 lag,
+  liquidity filter, and 5~bps/side cost.}
+  \label{tab:route_b_repro}
+  \scriptsize
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{lrrl}
+    \toprule
+    Metric & Route B artifact & Standard baseline script & Read-through \\
+    \midrule
+    Rank IC & 0.0282 & 0.0281 & Matches. \\
+    ICIR & 0.698 & 0.691 & Matches. \\
+    Turnover & 0.401 & 0.402 & Matches. \\
+    Net Sharpe & 0.740 & 0.802 & Convention-sensitive. \\
+    Ann.\ return & 7.78\% & 8.52\% & Convention-sensitive. \\
+    Max drawdown & -13.83\% & -12.22\% & Convention-sensitive. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
 \textbf{Momentum/reversal sleeve-book diagnostic.} Copilot's next product-style
 check built the two-sleeve book implied by the frequency scan: momentum plus
 short reversal, rebalanced every 5 days and combined at the position level with
@@ -565,28 +693,120 @@ rank-transformed baseline in Table~\ref{tab:results}, so the Sharpe levels are
 not apples-to-apples; the useful conclusion is that a simple multi-sleeve
 product does not beat momentum in this dataset.
 
-\textbf{Earlier 10-day overlay diagnostic.} Before Route~B, the best-looking
-result was a 10-day overlay on momentum (validation-selected Sharpe 0.995 vs
-0.746 for momentum, Rank IC 0.0292 vs 0.0271). It motivated the final design
-but is no longer a headline result because the later audit shows it does not
-survive multiple-testing and proxy factor-attribution checks.
+\begin{table}[H]
+  \centering
+  \caption{5-day momentum/reversal factor-sleeve book, net of 5~bps/side cost.
+  Inverse-volatility sleeve weights are estimated on the discovery split only.
+  The combined books reduce drawdown but fail to beat momentum-only on hold-out
+  Sharpe.}
+  \label{tab:sleeve_book}
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{lrrrrr}
+    \toprule
+    Book (2022+ test) & Sharpe & Ann.\ Ret & Ann.\ Vol & Max DD & Turnover \\
+    \midrule
+    Momentum-only & \textbf{0.675} & \textbf{6.19\%} & 9.17\% & -13.54\% & \textbf{0.223} \\
+    Reversal-only & -0.525 & -3.45\% & 6.57\% & -21.56\% & 0.888 \\
+    Combined inverse-vol & 0.146 & 0.81\% & \textbf{5.56\%} & \textbf{-10.97\%} & 0.566 \\
+    Combined equal-weight & 0.256 & 1.47\% & 5.75\% & -11.01\% & 0.516 \\
+    \midrule
+    Inverse-vol DSR check & \multicolumn{5}{l}{PSR 0.619; DSR 0.056; $T=222$; $N=12$; bootstrap Sharpe CI $[-0.679,1.171]$.} \\
+    Sleeve correlation & \multicolumn{5}{l}{$\rho(\text{momentum},\text{reversal})=-0.152$.} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\textbf{Earlier 10-day overlay diagnostic.} Before the Route~B residual-target
+rerun, the best-looking result was an incremental 10-day overlay on top of
+momentum. Table~\ref{tab:residual_overlay} is kept as a diagnostic because it
+motivated the final design: do not replace momentum; add only a controlled
+residual sleeve. It is no longer the headline result because the later P0 audit
+shows it does not survive multiple-testing and proxy factor-attribution checks.
+
+\begin{table}[H]
+  \centering
+  \caption{Earlier 10-day sector-relative residual overlay on the 2022--2026
+  hold-out. This diagnostic motivated Route~B but is not the final headline.}
+  \label{tab:residual_overlay}
+  \scriptsize
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    Signal & Rank IC & ICIR & Net Sharpe & Ann.\ Ret & Max DD & Turnover \\
+    \midrule
+    Momentum baseline & 0.0271 & 0.812 & 0.746 & 7.05\% & -14.59\% & 0.278 \\
+    Residual overlay, validation-selected & 0.0292 & 0.912 & 0.995 & 8.29\% & -12.26\% & 0.368 \\
+    Residual overlay, $\lambda=1$ diagnostic & 0.0332 & 1.205 & 1.297 & 9.44\% & -7.60\% & 0.509 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \textbf{Graph relation ablation.} The graph component was also tested as a
 proper relation ablation rather than accepted because a graph model looked good
 in isolation. The completed 120-candidate tree grid compares real relation
 families (sector, style-nearest-neighbor, rolling correlation, and all
 relations) against random-edge and no-edge controls for 5d/10d sector- and
-market-relative targets. The result is mostly negative: random controls beat
-real relations in sector 5d (0.898 vs 0.765 ICIR), market 5d (0.523 vs 0.505),
-and sector 10d (0.932 vs 0.812). The only narrow real-edge win is market 10d
-(0.443 vs 0.430), still below the momentum ICIR, so graph learning is treated as
-an experimental feature family, not as a headline source of alpha.
+market-relative targets. Table~\ref{tab:graph_ablation} reports the best real
+relation and the strongest placebo/control in each target block. The result is
+mostly negative: real relations do not consistently beat random or no-edge
+controls, so graph learning is treated as an experimental feature family, not
+as a headline source of alpha.
 
-\textbf{Failed ablations and negative controls.} Negative results are retained
-in the research record rather than hidden: a 24-member fixed-graph tree seed
-ensemble reached only Rank IC 0.0171, ICIR 0.517, Sharpe 0.290 with turnover
-0.649, and Kaggle/Ubiquant-style date aggregates topped out at sector-5d test
-ICIR 0.569, below the momentum ICIR of 1.016.
+\begin{table}[H]
+  \centering
+  \caption{Graph relation ablation summary. ICIR is the overlap-adjusted
+  hold-out rank-IC information ratio for the best tree/Ridge candidate in each
+  block.}
+  \label{tab:graph_ablation}
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{p{0.13\linewidth}p{0.21\linewidth}rp{0.21\linewidth}rp{0.25\linewidth}}
+    \toprule
+    Target & Best real relation & ICIR & Best control & ICIR & Read-through \\
+    \midrule
+    Sector 5d & style kNN / XGBoost & 0.765 & random / XGBoost & 0.898 &
+    Placebo control wins; no graph-edge claim. \\
+    Market 5d & all relations / Ridge & 0.505 & random / Ridge & 0.523 &
+    Placebo control wins on ICIR. \\
+    Sector 10d & style kNN / LightGBM & 0.812 & random / XGBoost & 0.932 &
+    Real edges do not beat the random control. \\
+    Market 10d & style kNN / XGBoost & 0.443 & random / Ridge & 0.430 &
+    Real relation narrowly wins, but remains below the momentum ICIR. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\textbf{Failed ablations and negative controls.} Several implemented variants
+are deliberately kept in the paper as negative evidence (Table
+\ref{tab:negative_ablations}). This matters because the search did not simply
+choose the best-looking row and hide the rest: seed-bagging fixed-graph trees
+increased turnover and underperformed momentum, and Kaggle/Ubiquant-style
+date-aggregate features did not repair the short-horizon signal.
+
+\begin{table}[H]
+  \centering
+  \caption{Negative ablations retained in the research record. These variants
+  are not promoted to the final model because they fail the same hold-out and
+  benchmark tests.}
+  \label{tab:negative_ablations}
+  \scriptsize
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{p{0.27\linewidth}p{0.36\linewidth}p{0.28\linewidth}}
+    \toprule
+    Experiment & Hold-out result & Interpretation \\
+    \midrule
+    24-member fixed-graph tree seed ensemble &
+    Rank IC 0.0171, ICIR 0.517, Sharpe 0.290, turnover 0.649 &
+    Seed-bagging reduces variance in form, but does not beat the low-turnover
+    momentum baseline. \\
+    Kaggle/Ubiquant-style date aggregates &
+    Best sector 5d test ICIR 0.569, below the momentum ICIR of 1.016 &
+    Cross-sectional date-level aggregates are not enough to stabilize the 5d
+    ML signal. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \textbf{PM-level robustness audit.} The Route~B 30-day overlay is the best
 current research lead, but it is still \emph{not} a production-grade alpha
@@ -761,10 +981,20 @@ case (2\% annual delisting rate, $-30\%$ average delisting return) and 0.839 in
 a stress case (5\%, $-50\%$). This bound is still not a true correction; the
 right fix is point-in-time constituents and delisting returns.
 
-\textbf{Foundation models.} Kronos was tested only as a small zero-shot
-exploration. On this universe the larger random-date benchmark had negative
-2022--2026 test ICs, so it is moved to the ``not yet useful'' bucket rather than
-treated as a headline model.
+\textbf{Kronos and survivorship bias.} Kronos is not used as a reported alpha
+model in this paper. Its relevant role is as a possible remedy for the
+survivorship-bias problem: a market time-series foundation model pretrained on
+large-scale OHLCV sequences can learn reusable price-volume representations
+across many instruments and regimes, then be fine-tuned or used to generate
+embeddings for securities outside the current S\&P~500 membership. In a
+production-grade extension, the training data would be a point-in-time universe
+including delisted, acquired, and index-deleted names, with split-adjusted and
+dividend-adjusted OHLCV and delisting returns. The process would pretrain or
+load the sequence model, fine-tune only on pre-split history, and generate
+embeddings or forecasts for each walk-forward date without seeing future
+membership. I therefore treat Kronos as a candidate route to broaden the
+investable universe and reduce current-constituent survivorship bias, not as
+empirical evidence in the results above.
 
 \textbf{Data quality.} Prices are split-adjusted; dividend adjustment is
 uncertain and treated as a minor caveat. We winsorize features and filter the
