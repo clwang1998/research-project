@@ -1,0 +1,26 @@
+# PIT inclusion sensitivity
+
+This artifact compares current-membership-on-history results with a
+point-in-time inclusion filter using `sp500_member_asof == 1` from
+`calendar_metadata.parquet`.
+
+The momentum rows are recomputed from the processed feature panel. The
+Route B rows are post-training sensitivities: the selected validation/test
+prediction file is filtered to the PIT cross-section, and the already
+selected `z(momentum) + 0.2 z(residual model)` overlay score is rebuilt
+inside that filtered cross-section. No model is retrained.
+
+```json
+{
+  "selected_run_dir": "output/model_search/route_b_factor_residual_alpha_core_20260622__target_excess_sector_fwd_20d__tabular__xgboost__xgb_balanced",
+  "target_col": "target_excess_sector_fwd_20d",
+  "return_col": "target_ret_fwd_20d",
+  "holdout_start": "2022-01-01",
+  "horizon_days": 20,
+  "overlay_lambda": 0.2,
+  "current_members_added_on_or_after_holdout_start": 72,
+  "excluded_holdout_symbols": 62,
+  "excluded_holdout_rows_after_baseline_controls": 27747,
+  "note": "PIT inclusion keeps only rows where sp500_member_asof == 1. Overlay figures are post-training sensitivities: predictions are filtered and the selected overlay score is rebuilt on the filtered cross-section, but models are not retrained."
+}
+```
