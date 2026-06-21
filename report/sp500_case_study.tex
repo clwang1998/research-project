@@ -14,6 +14,7 @@
 \usepackage{enumitem}
 \usepackage[hidelinks]{hyperref}
 \usepackage{caption}
+\usepackage{float}
 \captionsetup{font=small,labelfont=bf}
 \setlist{nosep,leftmargin=1.4em}
 \graphicspath{{figures/}}
@@ -43,19 +44,23 @@ macro factors that daily OHLCV data cannot forecast, whereas the
 learnable from price and volume alone.
 
 We therefore predict each stock's forward return \emph{in excess of its market
-and sector}, rank stocks by the model score on each day, and form a
-dollar-neutral long--short portfolio (long the top decile, short the bottom
-decile). The entire pipeline is built to be honest about look-ahead leakage,
-overlapping-window inflation, and survivorship bias, because in this problem the
+and sector}, convert model predictions into a validation-selected ensemble
+score, and then use that score in explicitly specified portfolio tests. The
+primary trading evaluation is a cost-adjusted, sector-neutral decile long--short
+portfolio: within each sector, long the top-scored stocks and short the
+bottom-scored stocks, then combine sectors into a dollar-neutral book. The
+entire pipeline is built to be honest about look-ahead leakage, overlapping-window
+inflation, transaction costs, and survivorship bias, because in this problem the
 easiest way to produce a spectacular-looking result is to make a methodological
 mistake.
 
 \textbf{Headline design.} Curated technical/liquidity/cross-sectional features
 $\rightarrow$ sector- and market-relative forward-return targets $\rightarrow$ a
-single-factor momentum baseline plus Ridge, LightGBM, XGBoost, and a small MLP
-$\rightarrow$ expanding yearly walk-forward with a final untouched hold-out
-$\rightarrow$ rank IC / ICIR and a transaction-cost-aware long--short backtest.
-The headline horizon is the 5-trading-day relative return.
+single-factor momentum baseline, Ridge, LightGBM, XGBoost, MLP, and supervised
+relation-aware graph variants $\rightarrow$ validation-selected cross-sectional
+rank ensembles $\rightarrow$ rank IC / ICIR, regime stability, and
+transaction-cost-aware portfolio backtests. The headline horizon is the
+5-trading-day relative return.
 
 % ===========================================================================
 \section{Data}
@@ -64,17 +69,29 @@ The headline horizon is the 5-trading-day relative return.
 We use only two files: \texttt{sp500\_stocks.csv} (daily OHLCV per ticker) and
 \texttt{sp500\_companies.csv} (sector, sub-industry, headquarters, founding year,
 and index \texttt{date\_added}). No fundamentals, analyst, macro, or external
-listing data are used. The panel covers $\approx$503 symbols from 2000-01 to
-2026-06 ($\approx$2.9M stock-day rows).
+listing data are used. The cleaned panel covers 503 symbols from 2000-01 to
+2026-06 (2.926M stock-day rows).
 
 \textbf{Price adjustment (data quality).} The raw file exposes only a
-\texttt{close} column. We verified it is already \emph{split-adjusted}: around
-NVDA's 2024-06-10 10:1 split (120.68 $\rightarrow$ 121.58) and AAPL's 2020-08-31
-4:1 split (121.06 $\rightarrow$ 125.17) there is no split-day gap, consistent
-with a \texttt{yfinance auto\_adjust=True} export. All returns, momentum,
-volatility, and targets are thus computed on an adjusted price, so splits do not
-inject artificial jumps. Residual uncertainty about dividend adjustment is
-treated as a minor data-quality caveat.
+\texttt{close} column and no separate \texttt{adj\_close}. We therefore audited
+major split events and verified that this \texttt{close} behaves as an adjusted
+close price: around NVDA's 2024-06-10 10:1 split (120.68 $\rightarrow$ 121.58)
+and AAPL's 2020-08-31 4:1 split (121.06 $\rightarrow$ 125.17) there is no
+split-day gap, consistent with a \texttt{yfinance auto\_adjust=True} export. In
+this study, \texttt{close} is therefore treated as the adjusted close used for
+all returns, momentum, volatility, and forward-return targets. Residual
+uncertainty about dividend adjustment is treated as a minor data-quality caveat.
+
+\textbf{Raw cleaning.} The CSV-to-Parquet preparation step normalizes ticker
+strings, enforces one row per \texttt{symbol,date}, drops rows with missing core
+OHLCV fields, non-positive prices or volume, and impossible OHLC relationships
+(\texttt{high} below open/low/close or \texttt{low} above open/high/close). The
+raw stock file has no core missing values or duplicate stock-days, but it does
+contain 4,413 zero-volume rows and one OHLC inversion; these 4,414 rows are
+removed before feature construction. Large but plausible moves are audited rather
+than deleted: 44 stock-days have absolute one-day returns above 50\%, while none
+exceed the 300\% hard error threshold. Company metadata are also normalized and
+deduplicated; all 503 tickers have sector and sub-industry labels.
 
 \textbf{Survivorship bias.} The constituent list is effectively the
 \emph{current} membership applied to history, so firms that went bankrupt, were
@@ -113,11 +130,78 @@ motivated groups:
   returns, breadth, dispersion, leave-one-out peer means, headquarters-region
   peers, and style buckets. \emph{Separates stock-specific alpha from group
   movement.}
+  \item \textbf{Graph relation features:} two graph feature families are kept
+  separate. The original \texttt{fixed\_graph} variant uses deterministic
+  same-sector/sub-industry, style-nearest-neighbor, and rolling-correlation graph
+  relation embeddings. The \texttt{supervised\_graph} variant uses out-of-fold
+  supervised GAT embeddings and scores. \emph{This separates static peer-structure
+  features from supervised relation-aware graph learning.}
   \item \textbf{Cross-sectional transforms:} date-wise z-scores/ranks plus
   sector- and sub-industry-neutral versions of the key signals.
   \emph{Because the target is relative, cross-sectional normalization is usually
   more informative than raw levels.}
 \end{itemize}
+
+\textbf{Feature audit and sanity check.} The rebuilt feature manifest contains
+525 non-target columns and 40 target columns. The large count is not 525
+independent ideas; it comes from expanding a smaller set of economic signals
+across lookback windows, related definitions, and neutralization transforms.
+For example, the cross-sectional layer alone contributes 168 columns by applying
+date-wise, sector-wise, and sub-industry-wise z-scores and ranks to selected
+base signals. The default walk-forward models do not use the full catalog:
+they use a curated 61-column \texttt{core} set covering momentum/reversal,
+volatility, technical indicators, liquidity, market/industry context, and key
+  cross-sectional ranks. The executable grid treats graph inclusion as a feature
+  variant: \texttt{tabular} uses those 61 core features, while
+  \texttt{fixed\_graph} (called \texttt{graph} in some lower-level pipeline
+  outputs) appends 19 deterministic graph columns
+(\texttt{graph\_emb\_0}--\texttt{graph\_emb\_15}
+plus relation-fusion weights for sector, style kNN, and rolling correlation).
+The three relation weights
+(\texttt{graph\_rel\_weight\_sector},
+\texttt{graph\_rel\_weight\_style\_knn}, and
+\texttt{graph\_rel\_weight\_rolling\_corr}) are normalized across relations and
+therefore sum to about one up to floating-point error; for each stock-date they
+  indicate whether the graph relation embedding relies more on sector peers,
+  style-nearest peers, or rolling-correlation peers. Separately,
+  \texttt{supervised\_graph} appends target-matched out-of-fold GAT score,
+  embedding, and relation-weight columns, while \texttt{graph\_supervised} is the
+  combined fixed-graph plus supervised-GAT variant. All variants use the same
+  targets, folds, models, costs, purge/embargo, and hold-out protocol.
+
+We explicitly verified that the expected factor families are present:
+12-minus-1-month momentum (\texttt{mom\_252d\_skip\_21d}), short-term reversal
+(\texttt{rev\_*}), volatility/range estimators, Bollinger features,
+\texttt{MACD}, RSI-style oscillators, Amihud illiquidity, and
+date/sector/sub-industry z-score and rank transforms. As a usefulness check, we
+ran a single-factor daily rank-IC scan on the cleaned 2008--2026 panel using the
+same T+1 label shift, bottom-10\% liquidity filter, and 1\%/99\% within-date
+winsorization as the modeling pipeline. Table~\ref{tab:feature_sanity} shows the
+largest effects in the core set. The magnitudes are small, as expected for daily
+cross-sectional equity alpha, but the signs are economically coherent: short-term
+overextension tends to reverse, 12--1 momentum is positive, and liquidity/impact
+variables contain weak but measurable information.
+
+\begin{table}[t]
+  \centering
+  \caption{Single-factor sanity check on core features, target
+  \texttt{target\_excess\_sector\_fwd\_5d}. Mean IC is the average daily
+  Spearman rank correlation after the production cleaning/evaluation controls.}
+  \label{tab:feature_sanity}
+  \small
+  \begin{tabular}{lrl}
+    \toprule
+    Feature & Mean IC & Interpretation \\
+    \midrule
+    \texttt{sector\_rank\_sma\_gap\_20d} & -0.0131 & within-sector short-term reversal \\
+    \texttt{ret\_5d} & -0.0125 & recent winners partially mean-revert \\
+    \texttt{amihud\_20d} & +0.0123 & liquidity / price-impact information \\
+    \texttt{log\_dollar\_volume} & -0.0123 & liquidity/size relation in relative returns \\
+    \texttt{mom\_252d\_skip\_21d} & +0.0102 & 12--1 month momentum survives weakly \\
+    \texttt{rsi\_14d} & -0.0099 & overbought names tend to cool off \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \textbf{Prediction target.} For horizon $h$ we define the forward total return
 $r^{(h)}_{i,t}$ and subtract a contemporaneous group mean to obtain
@@ -126,6 +210,14 @@ $\text{target\_excess\_sector\_fwd\_}h\text{d}_{i,t} = r^{(h)}_{i,t} -
 \overline{r}^{(h)}_{\text{sector}(i),t}$. Targets are forward-looking and are
 strictly excluded from the feature matrix. We evaluate horizons
 $h\in\{1,5,20,30,90\}$ with $h{=}5$ as the headline.
+
+\textbf{Execution timing.} The raw target columns are generated on each feature
+date, but the model is evaluated with a one-day implementation lag. A feature row
+at date $t$ is interpreted as information available after the $t$ close; the
+signal is therefore tradeable only from $t{+}1$. In code, the effective training
+label is the raw target shifted one trading day forward, so a row dated $t$ is
+matched to the forward return window that starts from the next trading day. This
+is the convention used for both rank-IC evaluation and portfolio PnL.
 
 % ===========================================================================
 \section{Methodology}
@@ -143,6 +235,78 @@ MLP is kept deliberately small and is \emph{not} tuned until it wins;
 validation IC but, like every trained model here, unable to beat a single
 momentum factor out of sample.
 
+\textbf{Graph feature variants.} Graph features are predictive inputs, not
+separate trading rules. The \texttt{fixed\_graph} variant is the original
+deterministic graph embedding: it builds sector, style-nearest-neighbor, and
+rolling-correlation relations from information available at the feature date and
+feeds the resulting \texttt{graph\_emb\_*} and relation-weight columns into the
+same tabular models. The \texttt{supervised\_graph} variant is the GAT
+extension: a supervised GAT is trained on the same time splits, then emits an
+out-of-fold \texttt{supervised\_graph\_score}, relation weights, and
+low-dimensional embeddings. The optional \texttt{graph\_supervised} variant
+combines both feature families. All graph variants are evaluated under the same
+purge, embargo, execution-lag, validation, cost, and portfolio rules as the
+tabular variant.
+
+\begin{table}[H]
+  \centering
+  \caption{Graph feature variants used in the model grid. The table separates
+  deterministic graph embeddings from supervised GAT embeddings before any
+  portfolio construction is applied.}\label{tab:graph_variants}
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{p{0.20\linewidth}p{0.34\linewidth}p{0.36\linewidth}}
+    \toprule
+    Variant & Construction and label use & Added features and interpretation \\
+    \midrule
+    \texttt{fixed\_graph} &
+    Deterministic sector, style-nearest-neighbor, and rolling-correlation peer
+    relations; no target labels are used. &
+    Adds \texttt{graph\_emb\_*} and fixed relation weights; tests whether static
+    peer structure adds information to tabular models. \\
+    \texttt{supervised\_graph} / GAT &
+    Supervised relation-aware GAT trained on the same time splits; uses training
+    labels only and is out-of-fold for scored rows. &
+    Adds \texttt{supervised\_graph\_score}, GAT embeddings, and learned relation
+    weights; tests whether target-aware graph representation helps ranking. \\
+    \texttt{graph\_supervised} &
+    Combination of deterministic fixed graph features and supervised GAT
+    features; partly label-trained through the GAT component. &
+    Adds both feature families; tests whether fixed peer structure and
+    supervised GAT embeddings are complementary, at higher complexity and
+    overfitting risk. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Validation-selected rank ensemble}
+\label{sec:ensemble}
+The ensemble is the final \emph{prediction layer}, not a portfolio construction
+rule. For each base model $m$ and date $t$, raw predictions are converted into a
+cross-sectional percentile rank
+$q^{(m)}_{i,t}=\operatorname{rank}_{t}(\hat y^{(m)}_{i,t})$. The final score is
+then an average of member ranks,
+\[
+  \text{final\_score}_{i,t}=\sum_{m\in\mathcal{M}} w_m q^{(m)}_{i,t},
+\]
+with either equal weights or non-negative weights proportional to validation
+rank ICIR. Member selection uses validation rank ICIR only; the post-validation
+test split is never used to select models, tune hyperparameters, choose ensemble
+members, or choose weights.
+
+We compare five ensemble definitions:
+\begin{itemize}
+  \item \texttt{ensemble\_all\_val\_selected}: the current full ensemble, using
+  the validation-selected best run for each model and feature variant.
+  \item \texttt{ensemble\_no\_mlp}: the same rule after excluding all MLP members.
+  \item \texttt{ensemble\_tree\_only}: Ridge, LightGBM, and XGBoost members only.
+  \item \texttt{ensemble\_supervised\_graph\_tree}: only supervised-graph Ridge,
+  LightGBM, and XGBoost members.
+  \item \texttt{ensemble\_stability\_filtered}: only members with positive
+  validation rank IC, enough positive validation years, and non-negative
+  available validation-regime rank IC.
+\end{itemize}
+
 \subsection{Leakage controls}
 Every result below is produced under the same defenses:
 \begin{itemize}
@@ -152,11 +316,12 @@ Every result below is produced under the same defenses:
   split boundary are dropped, on both the training and the evaluation side.
   \item \textbf{Horizon embargo:} the validation/test window starts an
   $h$-day embargo after training ends, removing label overlap at the seam.
-  \item \textbf{Train-only fitting:} all preprocessing statistics (imputation,
-  scaling, winsorization reference) and the model are fit on training rows only.
-  \item \textbf{Universe \& winsorization:} each day we drop the bottom 10\% by
-  dollar volume and winsorize features at the 1\%/99\% level, so illiquid names
-  and outliers do not drive the fit or an untradeable backtest.
+  \item \textbf{Train-only fitting:} imputation medians, scaling statistics, and
+  the model are fit on training rows only.
+  \item \textbf{Universe \& winsorization:} before splitting, each date's
+  cross-section drops the bottom 10\% by dollar volume and clips features at the
+  1\%/99\% within-date quantiles, so illiquid names and outliers do not drive the
+  fit or an untradeable backtest.
 \end{itemize}
 
 \subsection{Avoiding overlapping-window inflation}
@@ -173,19 +338,47 @@ the naive value as \texttt{rank\_ic\_ir\_raw} only to document the inflation
 (Fig.~\ref{fig:overlap}). A sanity gate flags any run with Sharpe$>3$ or
 ICIR$>5$ as suspected leakage/overlap.
 
-\subsection{Validation: expanding walk-forward + hold-out}
-A single static split can land in a lucky regime. We instead use
-\textbf{expanding yearly walk-forward}: train on all data up to year $Y$,
-validate on year $Y{+}1$ (with purge + embargo), then roll forward one year and
-expand the training window. Model selection uses the \emph{across-fold mean
-validation ICIR} only. A final post-2022 \textbf{hold-out} is evaluated exactly
-once, after selection, and never used for tuning.
+\subsection{Validation: walk-forward selection + hold-out}
+A single static split can land in a lucky regime. The single-model horizon
+comparison therefore uses \textbf{expanding yearly walk-forward}: train on all
+data up to year $Y$, validate on year $Y{+}1$ (with purge + embargo), then roll
+forward one year and expand the training window. Model selection uses the
+\emph{across-fold mean validation ICIR} only. The larger supervised-graph
+ensemble grid uses the same leakage controls but a fixed research split for
+tractability: train through 2018, validate through 2021, and evaluate the
+post-validation 2022--2026 test split once. In both cases, test results never
+participate in feature, model, hyperparameter, ensemble-member, or weight
+selection.
 
 \subsection{Portfolio and metrics}
-Daily scores become a top-decile long / bottom-decile short, dollar-neutral
-portfolio rebalanced every $h$ days, with a 5~bps per-side transaction cost
-applied to turnover. We report rank IC, overlap-adjusted ICIR, decile spread,
-annualized net return, volatility, net Sharpe, max drawdown, and turnover.
+On each rebalance date we sort stocks by the final ensemble score from
+\S\ref{sec:ensemble}. Portfolio construction is deliberately written as a ladder
+from simple to stringent:
+\begin{itemize}
+  \item \textbf{Long-only top bucket:} hold the top decile, either equal-weighted
+  or score-weighted, with no short book. This is closest to a constrained
+  long-only product and is evaluated with annualized return, volatility, Sharpe,
+  max drawdown, turnover, and cost-adjusted return.
+  \item \textbf{Plain long--short decile:} long the top 10\%, short the bottom
+  10\%, with equal dollar capital on both sides. This is the standard alpha
+  ranking test corresponding to rank IC.
+  \item \textbf{Sector-neutral long--short decile:} rank stocks within each
+  sector, build top-minus-bottom decile books inside usable sectors, and average
+  sector books into the total portfolio. This is the primary portfolio in the
+  reported ensemble backtest because the target itself is sector-relative.
+  \item \textbf{Market/sector beta-neutral portfolio:} an institutional-style
+  robustness extension that constrains portfolio beta and sector exposures near
+  zero in addition to dollar neutrality. It is stricter than the decile rule, but
+  requires an optimizer and typically reduces raw return.
+  \item \textbf{Cost-aware / turnover-controlled variants:} deduct explicit
+  transaction costs, rebalance every 5/10/20 trading days or every target horizon,
+  and optionally restrict rebalancing to material signal changes.
+\end{itemize}
+The empirical tables below use the sector-neutral long--short decile as the
+primary portfolio, rebalanced every $h$ days with a 5~bps per-side transaction
+cost applied to realized turnover. We report rank IC, overlap-adjusted ICIR,
+decile spread, annualized net return, volatility, net Sharpe, max drawdown, and
+turnover.
 
 % ===========================================================================
 \section{Results}
@@ -199,6 +392,50 @@ sector-relative 5d ICIR $1.15$, market-relative $0.99$) and LightGBM at 20 days
 (Fig.~\ref{fig:models}). No single model dominates every horizon and the boosted
 trees do \emph{not} uniformly win --- the MLP is genuinely competitive on the
 in-sample IC metric, so we do not pretend trees are categorically better.
+
+\textbf{Ensemble and graph comparison.} The experiment runner supports three
+graph variants: deterministic fixed graph, supervised GAT, and their combined
+form. In code these are \texttt{fixed\_graph}, \texttt{supervised\_graph}, and
+\texttt{graph\_supervised}. The archived ensemble metrics used for
+Table~\ref{tab:ensemble} contain the tabular and all-relation supervised-GAT runs
+for Ridge, LightGBM, XGBoost, and MLP, then construct the five
+validation-selected rank ensembles in \S\ref{sec:ensemble}.
+The fixed graph embedding is therefore documented as a model variant, but not
+included in this headline table unless its corresponding archived metrics are
+present. Table~\ref{tab:ensemble} reports the headline sector-relative 5-day test
+split using the primary sector-neutral long--short decile portfolio, net of
+5~bps per-side cost. Excluding MLP improves the
+post-validation rank IC and net Sharpe relative to the full ensemble, and the
+supervised-graph tree ensemble is the strongest ranker among these 5-day
+ensembles; however, turnover remains high and economic performance is only weakly
+positive after costs. In this grid, \texttt{ensemble\_no\_mlp} and
+\texttt{ensemble\_tree\_only} coincide because the non-MLP model set is exactly
+Ridge, LightGBM, and XGBoost.
+
+\begin{table}[H]
+  \centering
+  \caption{5-day sector-relative ensemble comparison on the 2022--2026
+  test split, using the primary sector-neutral long--short decile portfolio net
+  of 5~bps per-side cost.}\label{tab:ensemble}
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{llrrrrrr}
+    \toprule
+    Ensemble & Weight & N & Rank IC & ICIR & Net Sharpe & Ann.\ Ret & Turnover \\
+    \midrule
+    all val-selected & equal & 8 & 0.0139 & 0.677 & -0.34 & -2.0\% & 0.68 \\
+    all val-selected & ICIR & 8 & 0.0126 & 0.608 & -0.36 & -2.1\% & 0.69 \\
+    no MLP & equal & 6 & 0.0168 & 0.807 & -0.12 & -0.7\% & 0.68 \\
+    no MLP & ICIR & 6 & 0.0168 & 0.801 & 0.04 & 0.3\% & 0.69 \\
+    tree only & equal & 6 & 0.0168 & 0.807 & -0.12 & -0.7\% & 0.68 \\
+    tree only & ICIR & 6 & 0.0168 & 0.801 & 0.04 & 0.3\% & 0.69 \\
+    supervised-graph tree & equal & 3 & \textbf{0.0173} & \textbf{0.852} & -0.11 & -0.7\% & 0.69 \\
+    supervised-graph tree & ICIR & 3 & 0.0171 & 0.835 & \textbf{0.05} & \textbf{0.3\%} & 0.69 \\
+    stability-filtered & equal & 3 & 0.0061 & 0.208 & -0.00 & -0.0\% & \textbf{0.66} \\
+    stability-filtered & ICIR & 3 & 0.0051 & 0.210 & -0.10 & -0.6\% & \textbf{0.66} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \textbf{The decisive test: the untouched hold-out.} The validation ranking does
 not survive out of sample. On the 2022--2026 hold-out the \emph{single-factor
@@ -237,7 +474,11 @@ across folds, and the hold-out value (dashed) sits below the validation mean ---
 the expected out-of-sample decay. The 90-day horizon is excluded from selection
 (too few non-overlapping validation periods for a stable ICIR), and the
 longer-horizon hold-out Sharpe values are estimated from few non-overlapping
-periods and should be read as noisy.
+periods and should be read as noisy. The ensemble search also emits regime
+slices whenever a split overlaps the default stress windows (GFC 2008,
+COVID-2020, and inflation-2022); with the fixed ensemble split used here, the
+available ensemble stress rows are COVID-2020 in validation and inflation-2022 in
+test, while 2008 is covered only by the broader walk-forward stability analysis.
 
 \begin{figure}[t]
   \centering
@@ -318,10 +559,11 @@ illiquid decile so bad ticks and microcaps do not dominate.
 \textbf{Turnover and market impact.} We charge 5~bps per side on realized
 turnover and rebalance only every $h$ days. Turnover is itself decisive here:
 the trained models churn $\sim$60\% per rebalance versus $\sim$16\% for the slow
-momentum factor (Table~\ref{tab:results}), so even where a model's gross IC is
-comparable its net value is eroded. Market impact beyond the linear cost is not
-modeled, and capacity is limited by the bottom-decile short book --- the binding
-real-world constraint.
+momentum factor (Table~\ref{tab:results}), and the ensemble variants in
+Table~\ref{tab:ensemble} still turn over roughly two-thirds of the book per
+rebalance. Even where a model's gross IC is comparable, its net value is eroded.
+Market impact beyond the linear cost is not modeled, and capacity is limited by
+the bottom-decile short book --- the binding real-world constraint.
 
 \textbf{Regime dependence.} Walk-forward folds span 2008, 2020, and 2022 stress
 periods; Fig.~\ref{fig:stability} shows the signal is not uniform across
@@ -350,7 +592,9 @@ partly a 2022--2026 momentum-regime effect, which is itself the argument for the
 regime features and for never over-trusting one hold-out. The highest-value next
 steps are point-in-time constituents to remove survivorship bias, fundamental
 and alternative data to add genuinely orthogonal signal, and explicit
-capacity/impact modeling. (Graph-embedding and foundation-model experiments
-exist in the repository but are out of scope for this core study.)
+capacity/impact modeling. The supervised graph and validation-selected ensemble
+extensions improve the research design and sometimes the rank ordering, but in
+the current cost-adjusted backtests they do not yet create a robust economic edge
+over the simpler low-turnover momentum baseline.
 
 \end{document}
