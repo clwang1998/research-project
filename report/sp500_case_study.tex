@@ -62,7 +62,7 @@ momentum-plus-residual overlay $\rightarrow$ rank IC / ICIR, DSR/PBO,
 style-neutral attribution, capacity, and cost-aware portfolio backtests. The
 headline result is no longer a graph or MLP claim: it is a 30-trading-day
 sector-neutral residual overlay that improves hold-out Sharpe and drawdown
-versus standalone momentum, while still failing the strict full-grid
+versus standalone momentum before selection deflation, while still failing the strict full-grid
 multiple-testing hurdle.
 
 % ===========================================================================
@@ -277,48 +277,11 @@ still evaluated on raw forward returns and is combined with the momentum
 baseline as a small residual sleeve rather than a replacement.
 
 \textbf{Graph feature variants.} Graph features are predictive inputs, not
-separate trading rules. The \texttt{fixed\_graph} variant is the original
-deterministic graph embedding: it builds sector, style-nearest-neighbor, and
-rolling-correlation relations from information available at the feature date and
-feeds the resulting \texttt{graph\_emb\_*} and relation-weight columns into the
-same tabular models. The \texttt{supervised\_graph} variant is the GAT
-extension: a supervised GAT is trained on the same time splits, then emits an
-out-of-fold \texttt{supervised\_graph\_score}, relation weights, and
-low-dimensional embeddings. The optional \texttt{graph\_supervised} variant
-combines both feature families. All graph variants are evaluated under the same
-purge, embargo, execution-lag, validation, cost, and portfolio rules as the
-tabular variant.
-
-\begin{table}[H]
-  \centering
-  \caption{Graph feature variants used in the model grid. The table separates
-  deterministic graph embeddings from supervised GAT embeddings before any
-  portfolio construction is applied.}\label{tab:graph_variants}
-  \scriptsize
-  \setlength{\tabcolsep}{3pt}
-  \begin{tabular}{p{0.20\linewidth}p{0.34\linewidth}p{0.36\linewidth}}
-    \toprule
-    Variant & Construction and label use & Added features and interpretation \\
-    \midrule
-    \texttt{fixed\_graph} &
-    Deterministic sector, style-nearest-neighbor, and rolling-correlation peer
-    relations; no target labels are used. &
-    Adds \texttt{graph\_emb\_*} and fixed relation weights; tests whether static
-    peer structure adds information to tabular models. \\
-    \texttt{supervised\_graph} / GAT &
-    Supervised relation-aware GAT trained on the same time splits; uses training
-    labels only and is out-of-fold for scored rows. &
-    Adds \texttt{supervised\_graph\_score}, GAT embeddings, and learned relation
-    weights; tests whether target-aware graph representation helps ranking. \\
-    \texttt{graph\_supervised} &
-    Combination of deterministic fixed graph features and supervised GAT
-    features; partly label-trained through the GAT component. &
-    Adds both feature families; tests whether fixed peer structure and
-    supervised GAT embeddings are complementary, at higher complexity and
-    overfitting risk. \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+separate trading rules. The grid distinguishes deterministic
+\texttt{fixed\_graph} peer embeddings from out-of-fold supervised-GAT embeddings
+and their combined variant, all under the same purge, embargo, execution-lag,
+validation, cost, and portfolio rules. The results below treat graph learning as
+an ablation family only: it does not earn a headline alpha claim.
 
 \subsection{Validation-selected rank ensemble}
 \label{sec:ensemble}
@@ -501,57 +464,23 @@ sector-relative 5d ICIR $1.15$, market-relative $0.99$) and LightGBM at 20 days
 trees do \emph{not} uniformly win --- the MLP is genuinely competitive on the
 in-sample IC metric, so we do not pretend trees are categorically better.
 
-\textbf{Ensemble and graph comparison.} The experiment runner supports three
-graph variants: deterministic fixed graph, supervised GAT, and their combined
-form. In code these are \texttt{fixed\_graph}, \texttt{supervised\_graph}, and
-\texttt{graph\_supervised}. The archived ensemble metrics used for
-Table~\ref{tab:ensemble} contain the tabular and all-relation supervised-GAT runs
-for Ridge, LightGBM, XGBoost, and MLP, then construct the five
-validation-selected rank ensembles in \S\ref{sec:ensemble}.
-The fixed graph embedding is therefore documented as a model variant, but not
-included in this diagnostic table unless its corresponding archived metrics are
-present. Table~\ref{tab:ensemble} reports the sector-relative 5-day ensemble
-diagnostic on the test split using the primary sector-neutral long--short decile
-portfolio, net of 5~bps per-side cost. Excluding MLP improves the
-post-validation rank IC and net Sharpe relative to the full ensemble, and the
-supervised-graph tree ensemble is the strongest ranker among these 5-day
-ensembles; however, turnover remains high and economic performance is only weakly
-positive after costs. In this grid, \texttt{ensemble\_no\_mlp} and
-\texttt{ensemble\_tree\_only} coincide because the non-MLP model set is exactly
-Ridge, LightGBM, and XGBoost.
-
-\begin{table}[H]
-  \centering
-  \caption{5-day sector-relative ensemble comparison on the 2022--2026
-  test split, using the primary sector-neutral long--short decile portfolio net
-  of 5~bps per-side cost.}\label{tab:ensemble}
-  \scriptsize
-  \setlength{\tabcolsep}{3pt}
-  \begin{tabular}{llrrrrrr}
-    \toprule
-    Ensemble & Weight & N & Rank IC & ICIR & Net Sharpe & Ann.\ Ret & Turnover \\
-    \midrule
-    all val-selected & equal & 8 & 0.0139 & 0.677 & -0.34 & -2.0\% & 0.68 \\
-    all val-selected & ICIR & 8 & 0.0126 & 0.608 & -0.36 & -2.1\% & 0.69 \\
-    no MLP & equal & 6 & 0.0168 & 0.807 & -0.12 & -0.7\% & 0.68 \\
-    no MLP & ICIR & 6 & 0.0168 & 0.801 & 0.04 & 0.3\% & 0.69 \\
-    tree only & equal & 6 & 0.0168 & 0.807 & -0.12 & -0.7\% & 0.68 \\
-    tree only & ICIR & 6 & 0.0168 & 0.801 & 0.04 & 0.3\% & 0.69 \\
-    supervised-graph tree & equal & 3 & \textbf{0.0173} & \textbf{0.852} & -0.11 & -0.7\% & 0.69 \\
-    supervised-graph tree & ICIR & 3 & 0.0171 & 0.835 & \textbf{0.05} & \textbf{0.3\%} & 0.69 \\
-    stability-filtered & equal & 3 & 0.0061 & 0.208 & -0.00 & -0.0\% & \textbf{0.66} \\
-    stability-filtered & ICIR & 3 & 0.0051 & 0.210 & -0.10 & -0.6\% & \textbf{0.66} \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+\textbf{Ensemble and graph comparison.} The 5-day rank ensembles do not change
+the investment conclusion. Excluding MLP improves the post-validation rank IC
+relative to the full ensemble, and the supervised-graph tree ensemble is the
+strongest 5-day ranker among the archived ensemble diagnostics, but net Sharpe is
+only about zero to $0.05$ after costs and turnover remains near $0.7$ per
+rebalance. I therefore keep ensemble/GAT results as negative model-selection
+evidence rather than as a tradable alpha claim.
 
 \textbf{The decisive test: the untouched hold-out.} The validation ranking does
 not survive out of sample. On the 2022--2026 hold-out the \emph{single-factor
 momentum baseline} (rank by 12-minus-1-month momentum, no fitting) beats every
-trained multivariate model at the original 5-day benchmark horizon --- higher rank IC
-($0.024$ vs $\le 0.013$), higher ICIR ($1.06$ vs $\le 0.73$), higher net Sharpe
-($1.05$ vs $\le 0.53$), and roughly one-quarter the turnover ($0.16$ vs
-$\sim 0.59$); the same ordering holds at 20 days (Table~\ref{tab:results}). The
+trained multivariate model at the original 5-day benchmark horizon on rank IC
+($0.023$ vs $\le 0.013$), ICIR ($1.02$ vs $\le 0.73$), and turnover
+($0.22$ vs $\sim 0.59$). Its corrected 5-day Sharpe is $0.63$, not the
+legacy $>1$ figure, so the honest claim is narrower: momentum is the cleaner
+rank signal and the lower-turnover book, while Sharpe leadership depends on
+horizon and evaluator convention (Table~\ref{tab:results}). The
 models' validation-IC edge is therefore largely overfit: a robust, low-turnover
 factor is hard to beat after costs. This is the central, deliberately humbling
 finding of the study.
@@ -617,8 +546,8 @@ $z(\text{momentum})+0.2z(\text{residual XGBoost})$, with $\lambda=0.2$ selected
 on validation Sharpe. Table~\ref{tab:route_b_30d} compares this Route~B overlay
 with standalone momentum on the 2022--2026 hold-out. The overlay only slightly
 improves raw Rank IC, but it materially improves the economic profile: Sharpe
-increases from $0.74$ to $0.97$ and max drawdown falls from $-13.8\%$ to
-$-7.0\%$. Turnover rises, so capacity remains part of the risk budget. Because
+increases from $0.74$ to $0.99$ and max drawdown falls from $-13.8\%$ to
+$-7.3\%$. Turnover rises, so capacity remains part of the risk budget. Because
 the Rank IC barely changes, this is interpreted as a fragile risk/drawdown
 improvement on this hold-out path rather than as evidence of a materially better
 cross-sectional ranker.
@@ -635,49 +564,20 @@ cross-sectional ranker.
     Config & Rank IC & ICIR & Net Sharpe & Ann.\ Ret & Max DD & Turnover \\
     \midrule
     Momentum baseline & 0.0282 & 0.698 & 0.740 & 7.78\% & -13.83\% & \textbf{0.401} \\
-    Route B overlay, $\lambda=0.2$ & \textbf{0.0283} & 0.768 & \textbf{0.970} & \textbf{8.08\%} & \textbf{-6.96\%} & 0.492 \\
+    Route B overlay, $\lambda=0.2$ & \textbf{0.0283} & 0.768 & \textbf{0.987} & \textbf{8.27\%} & \textbf{-7.32\%} & 0.494 \\
     Route B overlay, $\lambda=0.3$ diagnostic & 0.0280 & \textbf{0.806} & 1.201 & 9.98\% & -6.10\% & 0.521 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-\textbf{Route B artifact and convention check.} The Route~B model-search and
-robustness-audit outputs were produced on a GPU server and are now mirrored
-locally under \texttt{output/model\_search/route\_b\_*} and
-\texttt{output/alpha\_robustness\_audit\_route\_b\_30d/}. The table above can
-therefore be traced to stored CSV/parquet artifacts, including the residual
-XGBoost predictions and the 30d ultra-blend metrics. The remaining issue is a
-portfolio-convention mismatch: an independent local rerun of the 30d
-sector-neutral momentum baseline with \texttt{eval\_momentum\_baseline.py}
-matches signal-level metrics (Rank IC $0.0281$, ICIR $0.691$, turnover $0.402$)
-but produces different economic metrics (Sharpe $0.802$, annual return
-$8.52\%$, max drawdown $-12.22\%$). The Route~B overlay improvement is
-internally valid because both rows in Table~\ref{tab:route_b_30d} use the same
-Route~B pipeline convention; using the standard baseline script as the reference
-shrinks the Sharpe improvement from about $+0.23$ to about $+0.17$.
-
-\begin{table}[H]
-  \centering
-  \caption{Route B 30-day momentum baseline convention check. The Route~B
-  artifact is now local; the comparison column uses the standard baseline script
-  with the same sector-relative 30d target, sector-neutral portfolio, T+1 lag,
-  liquidity filter, and 5~bps/side cost.}
-  \label{tab:route_b_repro}
-  \scriptsize
-  \setlength{\tabcolsep}{4pt}
-  \begin{tabular}{lrrl}
-    \toprule
-    Metric & Route B artifact & Standard baseline script & Read-through \\
-    \midrule
-    Rank IC & 0.0282 & 0.0281 & Matches. \\
-    ICIR & 0.698 & 0.691 & Matches. \\
-    Turnover & 0.401 & 0.402 & Matches. \\
-    Net Sharpe & 0.740 & 0.802 & Convention-sensitive. \\
-    Ann.\ return & 7.78\% & 8.52\% & Convention-sensitive. \\
-    Max drawdown & -13.83\% & -12.22\% & Convention-sensitive. \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+\textbf{Route B artifact check.} The Route~B model-search and robustness-audit
+outputs are mirrored locally under \texttt{output/model\_search/route\_b\_*}
+and \texttt{output/alpha\_robustness\_audit\_route\_b\_30d/}. A focused rerun
+of \texttt{eval\_momentum\_baseline.py} for the 30d sector-relative target
+reproduces the Route~B momentum row exactly: Rank IC $0.0282$, ICIR $0.698$,
+Sharpe $0.740$, annual return $7.78\%$, max drawdown $-13.83\%$, and turnover
+$0.401$. The final table is therefore internally traceable; its weakness is
+statistical deflation, not artifact provenance.
 
 \textbf{Momentum/reversal sleeve-book diagnostic.} Copilot's next product-style
 check built the two-sleeve book implied by the frequency scan: momentum plus
@@ -742,40 +642,14 @@ shows it does not survive multiple-testing and proxy factor-attribution checks.
   \end{tabular}
 \end{table}
 
-\textbf{Graph relation ablation.} The graph component was also tested as a
-proper relation ablation rather than accepted because a graph model looked good
-in isolation. The completed 120-candidate tree grid compares real relation
-families (sector, style-nearest-neighbor, rolling correlation, and all
-relations) against random-edge and no-edge controls for 5d/10d sector- and
-market-relative targets. Table~\ref{tab:graph_ablation} reports the best real
-relation and the strongest placebo/control in each target block. The result is
-mostly negative: real relations do not consistently beat random or no-edge
-controls, so graph learning is treated as an experimental feature family, not
-as a headline source of alpha.
-
-\begin{table}[H]
-  \centering
-  \caption{Graph relation ablation summary. ICIR is the overlap-adjusted
-  hold-out rank-IC information ratio for the best tree/Ridge candidate in each
-  block.}
-  \label{tab:graph_ablation}
-  \scriptsize
-  \setlength{\tabcolsep}{3pt}
-  \begin{tabular}{p{0.13\linewidth}p{0.21\linewidth}rp{0.21\linewidth}rp{0.25\linewidth}}
-    \toprule
-    Target & Best real relation & ICIR & Best control & ICIR & Read-through \\
-    \midrule
-    Sector 5d & style kNN / XGBoost & 0.765 & random / XGBoost & 0.898 &
-    Placebo control wins; no graph-edge claim. \\
-    Market 5d & all relations / Ridge & 0.505 & random / Ridge & 0.523 &
-    Placebo control wins on ICIR. \\
-    Sector 10d & style kNN / LightGBM & 0.812 & random / XGBoost & 0.932 &
-    Real edges do not beat the random control. \\
-    Market 10d & style kNN / XGBoost & 0.443 & random / Ridge & 0.430 &
-    Real relation narrowly wins, but remains below the momentum ICIR. \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+\textbf{Graph relation ablation.} The completed 120-candidate tree grid compares
+real relation families (sector, style-nearest-neighbor, rolling correlation, and
+all relations) against random-edge and no-edge controls for 5d/10d sector- and
+market-relative targets. The result is negative enough to summarize rather than
+headline: placebo controls beat real relations in three of four target blocks,
+and the one narrow real-relation win remains below the momentum ICIR. Graph
+learning is therefore treated as an experimental feature family, not a source of
+reported alpha.
 
 \textbf{Failed ablations and negative controls.} Several implemented variants
 are deliberately kept in the paper as negative evidence (Table
@@ -896,24 +770,25 @@ edge does not translate into out-of-sample value here.
 \begin{table}[t]
   \centering
   \caption{Untouched hold-out (2022--2026), net of 5~bps/side cost. The
-  single-factor momentum baseline beats the validation-selected models on IC,
-  ICIR, Sharpe, return, \emph{and} turnover. Parenthetical ICIR is the naive
-  overlapping value, shown only to document inflation. Best per block in
-  \textbf{bold}.}\label{tab:results}
+  single-factor momentum baseline is sourced from
+  \texttt{eval\_momentum\_baseline.py}; model rows are the walk-forward
+  validation selections in \texttt{docs/horizon\_comparison.md}. Parenthetical
+  ICIR is the naive overlapping value, shown only to document inflation. Best per
+  block in \textbf{bold}.}\label{tab:results}
   \small
   \setlength{\tabcolsep}{4pt}
   \begin{tabular}{llccccc}
     \toprule
     Horizon & Config & Rank IC & ICIR (raw) & Net Sharpe & Ann.\ Ret & Turnover \\
     \midrule
-    5d  & Momentum baseline (sector)            & \textbf{0.024} & \textbf{1.06} (2.10) & \textbf{1.05} & \textbf{13.5\%} & \textbf{0.16} \\
+    5d  & Momentum baseline (sector)            & \textbf{0.023} & \textbf{1.02} (2.05) & \textbf{0.63} & \textbf{5.9\%} & \textbf{0.22} \\
     5d  & MLP \emph{(val-selected, sector)}      & 0.013 & 0.73 (1.72) & 0.17 & 1.2\% & 0.59 \\
     5d  & Ridge (sector)                        & 0.010 & 0.40 (0.99) & 0.53 & 5.1\% & 0.65 \\
     5d  & LightGBM (sector)                     & 0.009 & 0.20 (1.17) & 0.24 & 1.7\% & 0.53 \\
     \midrule
-    20d & Momentum baseline (market)            & \textbf{0.043} & 0.71 (3.62) & \textbf{1.12} & \textbf{13.1\%} & \textbf{0.29} \\
+    20d & Momentum baseline (market)            & \textbf{0.042} & \textbf{0.65} (3.51) & \textbf{0.82} & 7.8\% & \textbf{0.36} \\
     20d & LightGBM \emph{(val-selected, market)} & 0.028 & 0.39 (2.47) & 0.49 & 5.5\% & 0.64 \\
-    20d & Ridge (market)                        & 0.029 & 0.54 (2.27) & 0.76 & 9.8\% & 0.61 \\
+    20d & Ridge (market)                        & 0.029 & 0.54 (2.27) & 0.76 & \textbf{9.8\%} & 0.61 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -925,9 +800,9 @@ edge does not translate into out-of-sample value here.
 
 \textbf{Overfitting and the validation--hold-out gap.} The clearest evidence of
 overfitting is in the results themselves: models selected on validation ICIR
-fail to beat a single momentum factor on the original 5-day raw rank benchmark, and
-the model with the best validation ICIR (the MLP) is not the best economic
-hold-out model. The final 30-day Route~B rerun improves the momentum book only
+fail to beat a single momentum factor on the original 5-day rank and turnover
+benchmark, and the model with the best validation ICIR (the MLP) is not the best
+economic hold-out model. The final 30-day Route~B rerun improves the momentum book only
 after the ML component is constrained to a residual sleeve; standalone residual
 models still have weak economics and high turnover. We use heavy regularization
 (Ridge penalty, tree depth/leaf/subsample limits, MLP dropout + weight decay +
@@ -949,12 +824,12 @@ a falsification exercise, not as a new product claim.
 
 \textbf{Route B reproducibility.} The synchronized Route~B artifacts close the
 largest traceability gap: the 30d overlay metrics can now be traced from local
-CSV/parquet files rather than only from a remote run note. The residual issue is
-portfolio-convention consistency. A local rerun of the 30d momentum baseline
-reproduces the signal metrics and turnover, but not the exact
-Sharpe/return/drawdown convention. This weakens the absolute economic claim and
-is another reason to keep Route~B in the exploratory bucket until the whole
-table is regenerated under one canonical portfolio evaluator.
+CSV/parquet files rather than only from a remote run note. A focused local rerun
+of the 30d momentum baseline now matches the Route~B baseline row, so the
+absolute economic comparison in Table~\ref{tab:route_b_30d} is reproducible
+under one canonical evaluator. The reason to keep Route~B exploratory is not
+provenance; it is weak independent attribution, wide confidence intervals, and
+the full-grid DSR/PBO charge.
 
 \textbf{Factor attribution.} The dataset lacks a full commercial risk model and
 fundamental value/quality factors, but we can still neutralize the final signal
@@ -1043,7 +918,7 @@ model must clear in a clearly specified metric. The realistic conclusion is
 sobering but more actionable after the Route~B rerun: broad multivariate,
 graph, and MLP searches do \emph{not} pass a production-grade alpha audit, but a
 compact 30-day XGBoost residual sleeve improves the momentum book's hold-out
-Sharpe and drawdown under the Route~B pipeline before the harshest
+Sharpe from $0.740$ to $0.987$ and drawdown before the harshest
 multiple-testing charge. That result is now traceable to local synchronized
 artifacts, but its Rank IC improvement is negligible and its full-grid DSR/PBO
 audit is weak, so it should be treated as a candidate risk-timing effect rather

@@ -27,7 +27,7 @@ where the XGBoost model is `xgb_balanced` trained on the 30d factor-neutral resi
 | 30d signal | test raw RankIC | test raw ICIR | net Sharpe | ann. return | max drawdown | turnover |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | momentum baseline | 0.0282 | 0.698 | 0.740 | 7.78% | -13.83% | 0.401 |
-| Route B overlay, val-selected | 0.0283 | 0.768 | 0.970 | 8.08% | -6.96% | 0.492 |
+| Route B overlay, val-selected | 0.0283 | 0.768 | 0.987 | 8.27% | -7.32% | 0.494 |
 | Route B overlay, diagnostic lambda=0.3 | 0.0280 | 0.806 | 1.201 | 9.98% | -6.10% | 0.521 |
 
 Use the validation-selected `lambda=0.2` line as the report-safe positive
@@ -35,12 +35,10 @@ result. The diagnostic `lambda=0.3` line is shown for transparency but was not
 the validation-selected overlay weight.
 
 The synchronized local artifacts also preserve the standard-baseline
-cross-check: `eval_momentum_baseline.py` reproduces the 30d signal metrics and
-turnover closely, but gives a different standalone momentum Sharpe
-(`0.802` rather than the Route B pipeline's `0.740`). Therefore the Route B
-overlay improvement should be read under one internal pipeline convention
-(+0.23 Sharpe versus Route B momentum), with a conservative cross-convention
-read of roughly +0.17 versus the standard baseline script.
+cross-check: `eval_momentum_baseline.py` now reproduces the 30d sector-relative
+momentum row exactly (`output/momentum_baseline_priority/momentum_excess_sector_30d_sector_neutral.json`).
+Therefore the Route B overlay improvement can be read under one local evaluator:
++0.247 Sharpe versus standalone 30d momentum before the DSR/PBO selection charge.
 
 ## Single Residual Model
 
@@ -93,6 +91,6 @@ The revised report should not claim that complex ML broadly beats momentum. The 
 > improves 2022--2026 holdout Sharpe and drawdown under the Route B pipeline.
 > The result is a candidate risk-timing sleeve, not a confirmed alpha: the Rank
 > IC improvement is negligible, the full-grid DSR fails, CSCV PBO is 50%, and
-> the standalone momentum baseline has a portfolio-convention sensitivity.
+> independent style-neutral attribution is weak.
 
 This is materially better than the old graph/MLP/GAT story because it has a clean economic role: the model is not a replacement for momentum; it is a small residual sleeve added to a strong baseline.
