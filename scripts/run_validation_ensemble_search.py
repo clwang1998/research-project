@@ -29,6 +29,7 @@ import run_model_pipeline as rmp  # noqa: E402
 
 TARGET_FAMILIES = ["excess_sector", "excess_market"]
 HORIZONS = [1, 5, 10]
+TREE_MODELS = {"ridge", "lightgbm", "xgboost"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -81,6 +82,41 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mlp-batch-size", default="8192")
     parser.add_argument("--mlp-patience", default="5")
     parser.add_argument("--selection-metric", default="rank_ic_ir", choices=["rank_ic_ir", "mean_rank_ic", "ic_ir", "mean_ic"])
+    parser.add_argument(
+        "--stability-min-years",
+        type=int,
+        default=2,
+        help="Minimum validation calendar years required for stability-filtered ensembles.",
+    )
+    parser.add_argument(
+        "--stability-min-positive-year-frac",
+        type=float,
+        default=0.67,
+        help="Minimum fraction of validation years with yearly rank IC above --stability-min-year-rank-ic.",
+    )
+    parser.add_argument(
+        "--stability-min-year-rank-ic",
+        type=float,
+        default=0.0,
+        help="Minimum yearly mean rank IC counted as positive for stability filtering.",
+    )
+    parser.add_argument(
+        "--stability-min-regime-rank-ic",
+        type=float,
+        default=0.0,
+        help="Minimum available validation-regime rank IC for stability filtering.",
+    )
+    parser.add_argument(
+        "--stability-min-val-rank-ic",
+        type=float,
+        default=0.0,
+        help="Minimum full-validation rank IC for stability filtering.",
+    )
+    parser.add_argument(
+        "--save-ensemble-predictions",
+        action="store_true",
+        help="Persist full ensemble prediction parquet files; metrics are written either way.",
+    )
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--skip-runs", action="store_true", help="Only rebuild aggregation and ensembles.")
     parser.add_argument(
@@ -745,108 +781,299 @@ def rank_pct_by_date(df: pd.DataFrame, col: str) -> pd.Series:
     return df.groupby("date", observed=True)[col].rank(pct=True, method="average")
 
 
-def evaluate_ensembles(best: pd.DataFrame, out_root: Path, experiment_name: str, args: argparse.Namespace) -> pd.DataFrame:
-    val = best.loc[(best["score"] == "model_score") & (best["split"] == "val")].copy()
-    if val.empty:
-        return pd.DataFrame()
-    ensemble_root = out_root / f"{experiment_name}_ensembles"
-    ensemble_root.mkdir(parents=True, exist_ok=True)
-    metric_rows = []
-    for target_col, target_rows in val.groupby("target_col", sort=True):
-        selected = target_rows.sort_values(args.selection_metric, ascending=False)
-        if selected["model"].nunique() < 2:
-            continue
-        pred_frames = []
-        weights = []
-        configs = []
-        for _, row in selected.iterrows():
-            run_dir = out_root / str(row["run_name"])
-            pred_path = run_dir / "predictions_val_test.parquet"
-            config_path = run_dir / "config.json"
-            if not pred_path.exists() or not config_path.exists():
-                continue
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-            pred = pd.read_parquet(pred_path)
-            score_name = f"score__{row['model']}__{row['feature_variant']}"
-            cols = ["date", "symbol", "sector", rmp.EVAL_TARGET_COL, rmp.EVAL_RETURN_COL, "model_score"]
-            pred = pred[cols].rename(columns={"model_score": score_name})
-            pred_frames.append(pred)
-            weight = max(0.0, float(row.get(args.selection_metric) or 0.0))
-            weights.append(weight)
-            configs.append({"run_name": row["run_name"], "model": row["model"], "feature_variant": row["feature_variant"], "score_col": score_name, "weight": weight})
-        if len(pred_frames) < 2:
-            continue
-        merged = pred_frames[0]
-        score_cols = [configs[0]["score_col"]]
-        for pred, cfg in zip(pred_frames[1:], configs[1:]):
-            merged = merged.merge(
-                pred.drop(columns=["sector", rmp.EVAL_TARGET_COL, rmp.EVAL_RETURN_COL]),
-                on=["date", "symbol"],
-                how="inner",
-            )
-            score_cols.append(cfg["score_col"])
-        for col in score_cols:
-            merged[f"rank__{col}"] = rank_pct_by_date(merged, col)
-        rank_cols = [f"rank__{col}" for col in score_cols]
-        merged["ensemble_rank_equal"] = merged[rank_cols].mean(axis=1)
-        weight_arr = np.asarray(weights[: len(rank_cols)], dtype=np.float64)
-        if np.isfinite(weight_arr).all() and weight_arr.sum() > 0:
-            weight_arr = weight_arr / weight_arr.sum()
-            merged["ensemble_rank_weighted"] = (merged[rank_cols].to_numpy() * weight_arr).sum(axis=1)
-        else:
-            merged["ensemble_rank_weighted"] = merged["ensemble_rank_equal"]
+def candidate_stability(row: pd.Series, out_root: Path, args: argparse.Namespace) -> dict[str, Any]:
+    run_dir = out_root / str(row["run_name"])
+    out: dict[str, Any] = {
+        "stable": False,
+        "stability_reason": "",
+        "val_years": 0,
+        "val_positive_year_frac": math.nan,
+        "val_min_year_rank_ic": math.nan,
+        "val_min_regime_rank_ic": math.nan,
+    }
+    val_rank_ic = safe_float(row.get("mean_rank_ic"))
+    if val_rank_ic is None or val_rank_ic < args.stability_min_val_rank_ic:
+        out["stability_reason"] = "low_full_val_rank_ic"
+        return out
 
-        config0 = json.loads((out_root / str(selected.iloc[0]["run_name"]) / "config.json").read_text(encoding="utf-8"))
-        eval_args = build_eval_args(config0, args)
-        dates = pd.to_datetime(merged["date"])
-        val_end = pd.Timestamp(args.val_end)
-        split_masks = {"val": dates <= val_end, "test": dates > val_end}
-        target_dir = ensemble_root / target_col
-        target_dir.mkdir(parents=True, exist_ok=True)
-        merged.to_parquet(target_dir / "ensemble_predictions.parquet", index=False)
-        (target_dir / "ensemble_members.json").write_text(json.dumps(clean_json(configs), indent=2), encoding="utf-8")
-        for ensemble_col in ["ensemble_rank_equal", "ensemble_rank_weighted"]:
-            for split, mask in split_masks.items():
-                part = merged.loc[mask].copy()
-                if part.empty:
-                    continue
-                metrics = rmp.evaluate_scores(
-                    part,
-                    ensemble_col,
-                    rmp.EVAL_TARGET_COL,
-                    rmp.EVAL_RETURN_COL,
-                    eval_args,
-                    split,
-                    target_dir,
-                )
-                regimes = rmp.evaluate_regimes(
-                    part,
-                    ensemble_col,
-                    rmp.EVAL_TARGET_COL,
-                    rmp.EVAL_RETURN_COL,
-                    eval_args,
-                    target_dir,
-                    split,
-                )
-                (target_dir / f"{ensemble_col}_{split}_regime_metrics.json").write_text(
-                    json.dumps(rmp.clean_json(regimes), indent=2, allow_nan=False),
-                    encoding="utf-8",
-                )
-                metric_rows.append(
-                    {
-                        "target_col": target_col,
-                        "score": ensemble_col,
-                        "split": split,
-                        **{k: safe_float(v) for k, v in metrics.items() if isinstance(v, (int, float, np.integer, np.floating))},
-                    }
-                )
-    out = pd.DataFrame(metric_rows)
-    if not out.empty:
-        out.to_csv(out_root / f"{experiment_name}_ensemble_metrics.csv", index=False)
+    ic_path = run_dir / "model_score_val_rank_ic.csv"
+    if not ic_path.exists():
+        out["stability_reason"] = "missing_val_rank_ic_file"
+        return out
+    ic = pd.read_csv(ic_path)
+    if ic.empty or "date" not in ic.columns or "rank_ic" not in ic.columns:
+        out["stability_reason"] = "empty_val_rank_ic_file"
+        return out
+    dates = pd.to_datetime(ic["date"], errors="coerce")
+    yearly = ic.assign(year=dates.dt.year).groupby("year", observed=True)["rank_ic"].mean().dropna()
+    out["val_years"] = int(len(yearly))
+    if len(yearly) < args.stability_min_years:
+        out["stability_reason"] = "too_few_val_years"
+        return out
+    positive_frac = float((yearly >= args.stability_min_year_rank_ic).mean())
+    min_year = float(yearly.min())
+    out["val_positive_year_frac"] = positive_frac
+    out["val_min_year_rank_ic"] = min_year
+    if positive_frac < args.stability_min_positive_year_frac:
+        out["stability_reason"] = "unstable_yearly_rank_ic"
+        return out
+
+    regime_path = run_dir / "model_score_val_regime_metrics.csv"
+    if regime_path.exists():
+        regimes = pd.read_csv(regime_path)
+        if not regimes.empty and "mean_rank_ic" in regimes.columns:
+            regime_vals = pd.to_numeric(regimes["mean_rank_ic"], errors="coerce").dropna()
+            if not regime_vals.empty:
+                min_regime = float(regime_vals.min())
+                out["val_min_regime_rank_ic"] = min_regime
+                if min_regime < args.stability_min_regime_rank_ic:
+                    out["stability_reason"] = "unstable_regime_rank_ic"
+                    return out
+
+    out["stable"] = True
+    out["stability_reason"] = "pass"
     return out
 
 
-def write_report(summary: pd.DataFrame, best: pd.DataFrame, ensemble: pd.DataFrame, out_root: Path, args: argparse.Namespace) -> None:
+def ensemble_definitions(selected: pd.DataFrame, out_root: Path, args: argparse.Namespace) -> list[dict[str, Any]]:
+    stable_rows = []
+    stability_by_run: dict[str, dict[str, Any]] = {}
+    for _, row in selected.iterrows():
+        stability = candidate_stability(row, out_root, args)
+        stability_by_run[str(row["run_name"])] = stability
+        if stability["stable"]:
+            stable_rows.append(row)
+    stable = pd.DataFrame(stable_rows) if stable_rows else selected.iloc[0:0].copy()
+    return [
+        {
+            "name": "ensemble_all_val_selected",
+            "description": "Validation-selected best run per target/model/feature variant.",
+            "rows": selected,
+            "stability": stability_by_run,
+        },
+        {
+            "name": "ensemble_no_mlp",
+            "description": "Validation-selected members excluding all MLP runs.",
+            "rows": selected.loc[selected["model"] != "mlp"].copy(),
+            "stability": stability_by_run,
+        },
+        {
+            "name": "ensemble_tree_only",
+            "description": "Validation-selected Ridge, LightGBM, and XGBoost members only.",
+            "rows": selected.loc[selected["model"].isin(TREE_MODELS)].copy(),
+            "stability": stability_by_run,
+        },
+        {
+            "name": "ensemble_supervised_graph_tree",
+            "description": "Validation-selected supervised_graph members from Ridge, LightGBM, and XGBoost.",
+            "rows": selected.loc[
+                selected["model"].isin(TREE_MODELS) & selected["feature_variant"].eq("supervised_graph")
+            ].copy(),
+            "stability": stability_by_run,
+        },
+        {
+            "name": "ensemble_stability_filtered",
+            "description": "Validation-selected members that pass yearly and available regime stability filters.",
+            "rows": stable,
+            "stability": stability_by_run,
+        },
+    ]
+
+
+def evaluate_single_ensemble(
+    selected: pd.DataFrame,
+    out_root: Path,
+    target_col: str,
+    ensemble_name: str,
+    ensemble_description: str,
+    stability_by_run: dict[str, dict[str, Any]],
+    args: argparse.Namespace,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    selected = selected.sort_values(args.selection_metric, ascending=False)
+    if len(selected) < 2:
+        return [], []
+    pred_frames = []
+    weights = []
+    configs = []
+    for _, row in selected.iterrows():
+        run_dir = out_root / str(row["run_name"])
+        pred_path = run_dir / "predictions_val_test.parquet"
+        config_path = run_dir / "config.json"
+        if not pred_path.exists() or not config_path.exists():
+            continue
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        score_name = f"score__{row['model']}__{row['feature_variant']}__{row['grid_tag']}"
+        cols = ["date", "symbol", "sector", rmp.EVAL_TARGET_COL, rmp.EVAL_RETURN_COL, "model_score"]
+        pred = pd.read_parquet(pred_path, columns=cols).rename(columns={"model_score": score_name})
+        pred_frames.append(pred)
+        weight = max(0.0, float(row.get(args.selection_metric) or 0.0))
+        weights.append(weight)
+        stability = stability_by_run.get(str(row["run_name"]), {})
+        configs.append(
+            {
+                "run_name": row["run_name"],
+                "model": row["model"],
+                "feature_variant": row["feature_variant"],
+                "grid_tag": row["grid_tag"],
+                "score_col": score_name,
+                "weight": weight,
+                "stable": stability.get("stable"),
+                "stability_reason": stability.get("stability_reason"),
+                "val_positive_year_frac": stability.get("val_positive_year_frac"),
+                "val_min_year_rank_ic": stability.get("val_min_year_rank_ic"),
+                "val_min_regime_rank_ic": stability.get("val_min_regime_rank_ic"),
+            }
+        )
+    if len(pred_frames) < 2:
+        return [], []
+
+    merged = pred_frames[0]
+    score_cols = [configs[0]["score_col"]]
+    for pred, cfg in zip(pred_frames[1:], configs[1:]):
+        merged = merged.merge(
+            pred.drop(columns=["sector", rmp.EVAL_TARGET_COL, rmp.EVAL_RETURN_COL]),
+            on=["date", "symbol"],
+            how="inner",
+        )
+        score_cols.append(cfg["score_col"])
+    for col in score_cols:
+        merged[f"rank__{col}"] = rank_pct_by_date(merged, col)
+    rank_cols = [f"rank__{col}" for col in score_cols]
+
+    score_equal = f"{ensemble_name}_rank_equal"
+    score_weighted = f"{ensemble_name}_rank_weighted"
+    merged[score_equal] = merged[rank_cols].mean(axis=1)
+    weight_arr = np.asarray(weights[: len(rank_cols)], dtype=np.float64)
+    if np.isfinite(weight_arr).all() and weight_arr.sum() > 0:
+        weight_arr = weight_arr / weight_arr.sum()
+        merged[score_weighted] = (merged[rank_cols].to_numpy() * weight_arr).sum(axis=1)
+    else:
+        merged[score_weighted] = merged[score_equal]
+
+    config0 = json.loads((out_root / str(selected.iloc[0]["run_name"]) / "config.json").read_text(encoding="utf-8"))
+    eval_args = build_eval_args(config0, args)
+    dates = pd.to_datetime(merged["date"])
+    val_end = pd.Timestamp(args.val_end)
+    split_masks = {"val": dates <= val_end, "test": dates > val_end}
+    target_dir = out_root / f"{args.experiment_name}_ensembles" / target_col / ensemble_name
+    target_dir.mkdir(parents=True, exist_ok=True)
+    if args.save_ensemble_predictions:
+        merged.to_parquet(target_dir / "ensemble_predictions.parquet", index=False)
+    (target_dir / "ensemble_members.json").write_text(
+        json.dumps(
+            clean_json(
+                {
+                    "ensemble_name": ensemble_name,
+                    "description": ensemble_description,
+                    "members": configs,
+                }
+            ),
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    metric_rows: list[dict[str, Any]] = []
+    regime_rows: list[dict[str, Any]] = []
+    for weighting, ensemble_col in [("equal", score_equal), ("weighted", score_weighted)]:
+        for split, mask in split_masks.items():
+            part = merged.loc[mask].copy()
+            if part.empty:
+                continue
+            metrics = rmp.evaluate_scores(
+                part,
+                ensemble_col,
+                rmp.EVAL_TARGET_COL,
+                rmp.EVAL_RETURN_COL,
+                eval_args,
+                split,
+                target_dir,
+            )
+            regimes = rmp.evaluate_regimes(
+                part,
+                ensemble_col,
+                rmp.EVAL_TARGET_COL,
+                rmp.EVAL_RETURN_COL,
+                eval_args,
+                target_dir,
+                split,
+            )
+            (target_dir / f"{ensemble_col}_{split}_regime_metrics.json").write_text(
+                json.dumps(rmp.clean_json(regimes), indent=2, allow_nan=False),
+                encoding="utf-8",
+            )
+            base = {
+                "target_col": target_col,
+                "ensemble_name": ensemble_name,
+                "weighting": weighting,
+                "score": ensemble_col,
+                "split": split,
+                "n_members": len(configs),
+                "member_models": ",".join(sorted({str(c["model"]) for c in configs})),
+                "member_variants": ",".join(sorted({str(c["feature_variant"]) for c in configs})),
+            }
+            metric_rows.append(
+                {
+                    **base,
+                    **{k: safe_float(v) for k, v in metrics.items() if isinstance(v, (int, float, np.integer, np.floating))},
+                }
+            )
+            for regime_name, regime_metrics in regimes.items():
+                regime_rows.append(
+                    {
+                        **base,
+                        "regime": regime_name,
+                        **{
+                            k: safe_float(v)
+                            for k, v in regime_metrics.items()
+                            if isinstance(v, (int, float, np.integer, np.floating))
+                        },
+                    }
+                )
+    return metric_rows, regime_rows
+
+
+def evaluate_ensembles(
+    best: pd.DataFrame, out_root: Path, experiment_name: str, args: argparse.Namespace
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    val = best.loc[(best["score"] == "model_score") & (best["split"] == "val")].copy()
+    if val.empty:
+        return pd.DataFrame(), pd.DataFrame()
+    ensemble_root = out_root / f"{experiment_name}_ensembles"
+    ensemble_root.mkdir(parents=True, exist_ok=True)
+    metric_rows = []
+    regime_rows = []
+    for target_col, target_rows in val.groupby("target_col", sort=True):
+        selected = target_rows.sort_values(args.selection_metric, ascending=False)
+        for spec in ensemble_definitions(selected, out_root, args):
+            rows, regimes = evaluate_single_ensemble(
+                spec["rows"],
+                out_root,
+                target_col,
+                spec["name"],
+                spec["description"],
+                spec["stability"],
+                args,
+            )
+            metric_rows.extend(rows)
+            regime_rows.extend(regimes)
+    out = pd.DataFrame(metric_rows)
+    if not out.empty:
+        out.to_csv(out_root / f"{experiment_name}_ensemble_metrics.csv", index=False)
+    regime_out = pd.DataFrame(regime_rows)
+    if not regime_out.empty:
+        regime_out.to_csv(out_root / f"{experiment_name}_ensemble_regime_metrics.csv", index=False)
+    return out, regime_out
+
+
+def write_report(
+    summary: pd.DataFrame,
+    best: pd.DataFrame,
+    ensemble: pd.DataFrame,
+    ensemble_regime: pd.DataFrame,
+    out_root: Path,
+    args: argparse.Namespace,
+) -> None:
     lines = [
         "# Validation Ensemble Search Report",
         "",
@@ -885,18 +1112,45 @@ def write_report(summary: pd.DataFrame, best: pd.DataFrame, ensemble: pd.DataFra
         lines.append("_No ensemble metrics yet._")
     else:
         cols = [
-            "target_col", "score", "split", "mean_rank_ic", "rank_ic_ir",
-            "mean_ic", "ic_ir", "sharpe_net", "ann_return_net", "avg_turnover",
+            "target_col", "ensemble_name", "weighting", "split", "n_members",
+            "mean_rank_ic", "rank_ic_ir", "mean_ic", "ic_ir", "sharpe_net",
+            "ann_return_net", "avg_turnover", "max_drawdown_net",
         ]
-        lines.append(ensemble[cols].sort_values(["target_col", "score", "split"]).to_markdown(index=False, floatfmt=".4f"))
+        lines.append(
+            ensemble[cols]
+            .sort_values(["target_col", "ensemble_name", "weighting", "split"])
+            .to_markdown(index=False, floatfmt=".4f")
+        )
+    lines.extend(["", "## Regime Ensemble Metrics", ""])
+    if ensemble_regime.empty:
+        lines.append("_No ensemble regime metrics yet._")
+    else:
+        cols = [
+            "target_col", "ensemble_name", "weighting", "split", "regime",
+            "mean_rank_ic", "rank_ic_ir", "sharpe_net", "ann_return_net", "max_drawdown_net",
+        ]
+        lines.append(
+            ensemble_regime[cols]
+            .sort_values(["target_col", "ensemble_name", "weighting", "split", "regime"])
+            .to_markdown(index=False, floatfmt=".4f")
+        )
     lines.extend(
         [
+            "",
+            "## Ensemble Definitions",
+            "",
+            "- `ensemble_all_val_selected`: current validation-selected best run per target/model/feature variant.",
+            "- `ensemble_no_mlp`: validation-selected members excluding all MLP runs.",
+            "- `ensemble_tree_only`: validation-selected Ridge, LightGBM, and XGBoost members only.",
+            "- `ensemble_supervised_graph_tree`: supervised_graph Ridge, LightGBM, and XGBoost members only.",
+            "- `ensemble_stability_filtered`: validation-selected members with positive full-validation rank IC, enough positive validation years, and non-negative available validation-regime rank IC.",
             "",
             "## Notes",
             "",
             "- Single-model hyperparameters are selected only from validation metrics.",
             "- Ensembles average daily cross-sectional prediction ranks from selected model predictions.",
             "- Test rows are evaluated after model and ensemble definition; they are not used for selection.",
+            "- Regime rows are emitted only when the evaluated split overlaps a configured regime window.",
         ]
     )
     (out_root / f"{args.experiment_name}_report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -936,8 +1190,8 @@ def main() -> None:
     summary.to_csv(out_root / f"{args.experiment_name}_all_metrics.csv", index=False)
     best = select_best(summary, args.selection_metric)
     best.to_csv(out_root / f"{args.experiment_name}_best_metrics.csv", index=False)
-    ensemble = evaluate_ensembles(best, out_root, args.experiment_name, args)
-    write_report(summary, best, ensemble, out_root, args)
+    ensemble, ensemble_regime = evaluate_ensembles(best, out_root, args.experiment_name, args)
+    write_report(summary, best, ensemble, ensemble_regime, out_root, args)
     print(f"Done. Report: {out_root / f'{args.experiment_name}_report.md'}")
 
 
