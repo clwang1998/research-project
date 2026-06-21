@@ -68,6 +68,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pipeline", default="scripts/run_model_pipeline.py")
     parser.add_argument("--out-dir", default="output/model_search")
     parser.add_argument("--experiment-name", default="validation_ensemble_search")
+    parser.add_argument("--feature-map", default="data/processed/feature_columns_by_group.csv")
     parser.add_argument("--feature-set", choices=["core", "all"], default="all")
     parser.add_argument(
         "--feature-variants",
@@ -102,6 +103,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ridge-alphas", nargs="+", default=["0.000001", "1", "25", "100"])
     parser.add_argument("--lightgbm-candidates-per-target", type=int, default=0)
     parser.add_argument("--xgboost-candidates-per-target", type=int, default=0)
+    parser.add_argument(
+        "--tree-seeds",
+        nargs="+",
+        type=int,
+        default=[42],
+        help="Seeds used to expand LightGBM/XGBoost specs for seed-bagging ensembles.",
+    )
     parser.add_argument("--mlp-hidden-sizes", nargs="+", type=int, default=[16, 32, 64])
     parser.add_argument("--mlp-num-layers", nargs="+", type=int, default=[1, 2])
     parser.add_argument("--mlp-learning-rates", nargs="+", default=["0.0001", "0.0003", "0.001"])
@@ -351,13 +359,26 @@ def specs_for_model(model: str, args: argparse.Namespace) -> list[dict[str, Any]
         return ridge_specs(args)
     if model == "lightgbm":
         specs = lightgbm_specs()
-        return specs[: args.lightgbm_candidates_per_target] if args.lightgbm_candidates_per_target > 0 else specs
+        specs = specs[: args.lightgbm_candidates_per_target] if args.lightgbm_candidates_per_target > 0 else specs
+        return expand_tree_seed_specs(specs, args.tree_seeds)
     if model == "xgboost":
         specs = xgboost_specs()
-        return specs[: args.xgboost_candidates_per_target] if args.xgboost_candidates_per_target > 0 else specs
+        specs = specs[: args.xgboost_candidates_per_target] if args.xgboost_candidates_per_target > 0 else specs
+        return expand_tree_seed_specs(specs, args.tree_seeds)
     if model == "mlp":
         return mlp_specs(args)
     raise ValueError(model)
+
+
+def expand_tree_seed_specs(specs: list[dict[str, Any]], seeds: list[int]) -> list[dict[str, Any]]:
+    out = []
+    unique_seeds = list(dict.fromkeys(int(seed) for seed in seeds))
+    for spec in specs:
+        for seed in unique_seeds:
+            args_with_seed = [*spec["args"], "--sample-seed", str(seed)]
+            tag = spec["tag"] if len(unique_seeds) == 1 and seed == 42 else f"{spec['tag']}_seed{seed}"
+            out.append({"tag": tag, "args": args_with_seed})
+    return out
 
 
 def variant_args(
@@ -447,6 +468,7 @@ def run_candidate(task: dict[str, Any], args: argparse.Namespace, out_root: Path
         args.pipeline,
         "--run-name", task["run_name"],
         "--out-dir", str(out_root),
+        "--feature-map", args.feature_map,
         "--target-col", task["target"],
         "--return-col", task["return"],
         "--feature-set", args.feature_set,
@@ -493,6 +515,7 @@ def pipeline_args_for(task: dict[str, Any], args: argparse.Namespace) -> argpars
             "run_model_pipeline",
             "--run-name", task["run_name"],
             "--out-dir", str(Path(args.out_dir)),
+            "--feature-map", args.feature_map,
             "--target-col", task["target"],
             "--return-col", task["return"],
             "--feature-set", args.feature_set,

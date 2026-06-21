@@ -31,6 +31,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--start-date", default="2008-01-01")
     p.add_argument("--end-date", default=None)
     p.add_argument("--holdout-start", default="2022-01-01")
+    p.add_argument("--sector-neutral", action="store_true")
     p.add_argument("--out-json", default=None)
     return p.parse_args()
 
@@ -49,6 +50,7 @@ def main() -> None:
     cfg.start_date = args.start_date
     cfg.end_date = args.end_date
     cfg.feature_map = args.feature_map
+    cfg.sector_neutral = bool(args.sector_neutral)
 
     fmap = rmp.read_feature_map(args.feature_map)
     feature_cols = rmp.select_feature_columns(cfg, fmap)
@@ -101,6 +103,7 @@ def main() -> None:
         "holdout_ann_return": metrics.get("ann_return_net"),
         "holdout_max_dd": metrics.get("max_drawdown_net"),
         "holdout_turnover": metrics.get("avg_turnover"),
+        "sector_neutral": bool(cfg.sector_neutral),
     }
     print(json.dumps(out, indent=2))
     if args.out_json:
