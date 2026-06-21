@@ -62,19 +62,18 @@ single-factor momentum baseline $\rightarrow$ compact Ridge/XGBoost models
 trained on factor-neutral residual labels $\rightarrow$ a validation-selected
 momentum-plus-residual overlay $\rightarrow$ rank IC / ICIR, DSR/PBO,
 style-neutral attribution, capacity, and cost-aware portfolio backtests. The
-research decision is simple: on price/volume plus sector metadata alone, the
-only defensible continuing benchmark is low-turnover 12--1 momentum, and the
-specific book I would keep as the research benchmark is the 5-day
-sector-neutral implementation. Its case rests on traded-horizon IC and
-turnover, not on a tight portfolio Sharpe: block-bootstrap IC $t=2.41$ with
-mean-IC CI $[0.004,0.042]$, turnover $0.22$, net Sharpe $0.62$--$0.63$,
-mean-return $t=1.31$, and bootstrap Sharpe CI $[-0.32,1.63]$. A calendar-slice
-stress test shows that the recent hold-out is momentum-friendly rather than
-representative. A partial
-inclusion-side PIT filter cuts the horizon-matched Sharpe from $0.620$ to
-$0.461$ and its own bootstrapped Sharpe CI is $[-0.49,1.43]$, so the portfolio
-Sharpe evidence is directional only. Reported net returns include explicit
-trading costs but exclude stock borrow; a simple 25/50/100~bps annual
+research decision is simple: on price/volume plus sector metadata alone, keep
+low-turnover 12--1 momentum as the research benchmark, specifically the 5-day
+sector-neutral implementation, but treat it as a signal benchmark rather than a
+fundable standalone product. Its case rests on traded-horizon IC and turnover,
+not on a tight portfolio Sharpe: block-bootstrap IC $t=2.41$ with mean-IC CI
+$[0.004,0.042]$, turnover $0.22$, net Sharpe $0.62$--$0.63$, mean-return
+$t=1.31$, and bootstrap Sharpe CI $[-0.32,1.63]$. A calendar-slice stress test
+shows that the recent hold-out is momentum-friendly rather than representative.
+A partial inclusion-side PIT filter cuts the horizon-matched Sharpe from
+$0.620$ to $0.461$ and its own bootstrapped Sharpe CI is $[-0.49,1.43]$, so the
+portfolio Sharpe evidence is directional only. Reported net returns include
+explicit trading costs but exclude stock borrow; a simple 25/50/100~bps annual
 short-borrow haircut on 50\% short notional reduces the 5-day momentum Sharpe
 from 0.627 to 0.614/0.600/0.574. The ML/graph/residual models are not promoted
 as standalone
@@ -279,7 +278,7 @@ momentum); (ii) \textbf{Ridge} regression (linear, strong regularization);
 (two hidden layers, dropout, weight decay, early stopping on validation). The
 MLP is kept deliberately small and is \emph{not} tuned until it wins;
 \S\ref{sec:results} reports its honest standing --- competitive on in-sample
-validation IC, but not stable enough to headline once the untouched hold-out,
+validation IC, but not stable enough to headline once the single-evaluation hold-out,
 turnover, and momentum benchmark are applied.
 
 \textbf{Momentum-residual overlay.} Because the single-factor momentum baseline
@@ -507,7 +506,7 @@ only about zero to $0.05$ after costs and turnover remains near $0.7$ per
 rebalance. I therefore keep ensemble/GAT results as negative model-selection
 evidence rather than as a tradable alpha claim.
 
-\textbf{The decisive test: the untouched hold-out.} The validation ranking does
+\textbf{The decisive test: the single-evaluation hold-out.} The validation ranking does
 not survive out of sample. On the 2022--2026 hold-out the \emph{single-factor
 momentum baseline} (rank by 12-minus-1-month momentum, no fitting) beats every
 trained multivariate model at the original 5-day benchmark horizon on rank IC
@@ -775,8 +774,8 @@ test, while 2008 is covered only by the broader walk-forward stability analysis.
   \end{minipage}
 \end{figure}
 
-\textbf{Hold-out performance.} Table~\ref{tab:results} reports the untouched
-post-2022 hold-out, net of 5~bps/side cost. The 5d and 20d blocks show the
+\textbf{Hold-out performance.} Table~\ref{tab:results} reports the
+single-evaluation post-2022 hold-out, net of 5~bps/side cost. The 5d and 20d blocks show the
 original conclusion: realistic cross-sectional equity ``alpha'' from
 price/volume features alone is small, and the trained models' apparent in-sample
 edge does not translate cleanly into out-of-sample value. The added 30d block is
@@ -786,7 +785,7 @@ passed the Route~B deflation/attribution audit.
 
 \begin{table}[t]
   \centering
-  \caption{Untouched hold-out (2022--2026), net of 5~bps/side cost and gross of
+  \caption{Single-evaluation hold-out (2022--2026), net of 5~bps/side cost and gross of
   stock-borrow. Model rows are validation selections; parenthetical ICIR is the
   naive overlapping value. Momentum Sharpe CIs are 5d $[-0.32,1.63]$, 20d
   $[-0.12,1.90]$, and 30d $[-0.22,1.85]$; PIT-filtered Sharpes are
@@ -812,8 +811,38 @@ passed the Route~B deflation/attribution audit.
     \midrule
     30d & Momentum baseline (sector)            & 0.028 & 0.70 (3.04) & 0.74 & 7.8\% & 0.40 \\
     30d & MLP \emph{(broad-grid val-selected, sector)}      & 0.027 & 0.92 (3.88) & 0.69 & 6.5\% & 0.70 \\
-    30d & LightGBM (sector; val ICIR 0.08, unaudited)  & 0.036 & 0.80 (4.34) & 1.23 & 13.0\% & 0.63 \\
+    30d & LightGBM (validation-rejected; unaudited)  & 0.036 & 0.80 (4.34) & 1.23 & 13.0\% & 0.63 \\
     30d & Route B overlay, $\lambda=0.2$         & 0.028 & 0.76 (3.07) & 0.99 & 8.3\% & 0.49 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[t]
+  \centering
+  \caption{Evidence ladder for the endorsed 5-day momentum benchmark. The IC
+  evidence survives better than the portfolio economics; the PM use is therefore
+  benchmark/sleeve research, not standalone deployment.}\label{tab:momentum_ladder}
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{lp{0.47\linewidth}p{0.31\linewidth}}
+    \toprule
+    Layer & Evidence & PM read-through \\
+    \midrule
+    Signal IC & 1d hold-out Rank IC CI $[0.0115,0.0297]$; NW-21 $t=4.39$.
+      Traded 5d block-bootstrap IC $t=2.41$, CI $[0.004,0.042]$. &
+      Best-supported evidence that the raw cross-sectional momentum signal exists. \\
+    Portfolio & Net Sharpe $0.62$--$0.63$, mean-return $t=1.31$,
+      Sharpe CI $[-0.32,1.63]$, turnover $0.22$. &
+      Corroborating economics, but not statistically tight standalone Sharpe. \\
+    PIT inclusion & Horizon-matched Sharpe $0.620\rightarrow0.461$;
+      PIT-filtered CI $[-0.49,1.43]$. &
+      Current-membership bias is adverse; deleted names remain unresolved. \\
+    Borrow/capacity & 25/50/100 bps borrow lowers Sharpe to
+      0.614/0.600/0.574; turnover remains lowest among tested books. &
+      Still a useful low-turnover benchmark, gross-of-borrow point estimates are upper bounds. \\
+    Regimes & 5d Sharpe by calendar slice: -0.95 (2008--11), 0.33
+      (2012--16), -0.14 (2017--21), 0.62 (2022--26). &
+      Recent hold-out is momentum-friendly; no multi-regime funding proof. \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -834,7 +863,7 @@ addition. Standalone residual models still have weak economics and high
 turnover. We use heavy regularization
 (Ridge penalty, tree depth/leaf/subsample limits, MLP dropout + weight decay +
 early stopping), select hyperparameters on validation folds only, and report a
-single untouched hold-out precisely so this gap is \emph{visible} rather than
+single-evaluation hold-out precisely so this gap is \emph{visible} rather than
 hidden, with the Sharpe$>3$/ICIR$>5$ gate catching anything ``too good''.
 
 \textbf{Multiple testing.} The original grid is large enough that the best
@@ -1013,6 +1042,14 @@ The main evaluator is also gross of stock-borrow; a 25/50/100~bps annual
 short-borrow haircut lowers the canonical 5d Sharpe from 0.627 to
 0.614/0.600/0.574. These are not fatal haircuts, but they are enough to make
 the reported long--short Sharpe an upper-bound research statistic.
+My PM decision would be to keep the 5-day momentum book as the live research
+benchmark and small-capacity paper sleeve, size any real exposure off IC
+stability and turnover rather than the headline Sharpe, and require a true
+point-in-time universe with delisting returns before treating the Sharpe as
+capital-allocation evidence. Route~B earns a next-round research budget only if
+it passes CPCV-style stability and a stronger style-neutral return test; until
+then it is a risk/drawdown diagnostic layered on momentum, not independent
+alpha.
 Its daily IC confirmation is more robust: a
 21-day block bootstrap puts the hold-out mean Rank IC CI at $[0.0115,0.0297]$
 and Newey--West lag-21 gives $t=4.39$; the traded-horizon HAC/block evidence is
