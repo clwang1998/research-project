@@ -45,16 +45,20 @@ macro factors that daily OHLCV data cannot forecast, whereas the
 (momentum, reversal, liquidity, volatility, and sector-rotation effects) that is
 learnable from price and volume alone.
 
-\textbf{Answer first.} The only raw signal I would keep is 12--1 momentum, used
-as a 5-day sector-neutral research benchmark rather than a funded standalone
-alpha. Its hold-out portfolio Sharpe is positive but imprecise (about
-$0.62$--$0.63$, CI crossing zero), and the partial point-in-time inclusion check
-cuts it to $0.461$. The best ML result is not independent alpha: the 30-day
-Route~B residual overlay reduces drawdown but has paired return-increment
-$t=0.25$, 93\% momentum correlation, \$100M capacity Sharpe $0.948$,
-full-grid DSR $0.003$, and PBO 50\%.
-The next dollar should buy point-in-time constituents with delisting returns and
-lower-turnover execution tests, not a larger model zoo.
+\textbf{Answer first.} The contribution is a reproducible triage framework and
+a narrow PM decision: keep 12--1 momentum as a 5-day sector-neutral research
+benchmark, not as a funded standalone alpha. Momentum's signal evidence is
+cross-regime: the 1-day discovery IC is positive under block bootstrap
+($t=2.42$, CI $[0.0013,0.0119]$), and the 2022--2026 confirmation IC is also
+positive (plain $t=3.54$, NW-21 $t=4.39$, CI $[0.0115,0.0297]$). Its 5-day
+portfolio economics are much weaker: hold-out Sharpe is positive but imprecise
+(about $0.62$--$0.63$, CI crossing zero), and the partial point-in-time
+inclusion check cuts it to $0.461$. The best ML result is not independent alpha:
+the 30-day Route~B residual overlay reduces drawdown but has paired
+return-increment $t=0.25$, 93\% momentum correlation, \$100M capacity Sharpe
+$0.948$, full-grid DSR $0.003$, and PBO 50\%. The next dollar should buy
+point-in-time constituents with delisting returns and lower-turnover execution
+tests, not a larger model zoo.
 
 We therefore predict each stock's forward return \emph{in excess of its market
 and sector}, first test validation-selected model ensembles, and then use the
@@ -75,11 +79,13 @@ momentum-plus-residual overlay $\rightarrow$ rank IC / ICIR, DSR/PBO,
 style-neutral attribution, capacity, and cost-aware portfolio backtests. On
 price/volume plus sector metadata alone, the defensible conclusion is narrow:
 momentum survives as a literature-anchored benchmark and hypothesis generator,
-not as a robustly tradable multi-regime edge. The cleanest evidence is
-pre-registered 1-day IC confirmation; post-2022 minus 2008--2021 1-day IC is
-$0.0141$ (21-day block CI $[0.0034,0.0246]$, $p(\Delta\le0)=0.0049$). The
-5-day traded-horizon evidence is positive mainly in 2022--2026: $\Delta$IC is
-$0.0168$, but CI $[-0.0045,0.0380]$ crosses zero and $p(\Delta\le0)=0.062$.
+not as a robustly tradable multi-regime edge. The cleanest signal-existence
+evidence is that 1-day momentum IC is positive in both 2008--2021 discovery and
+2022--2026 confirmation; the post-2022 improvement of $0.0141$ (21-day block CI
+$[0.0034,0.0246]$, $p(\Delta\le0)=0.0049$) is secondary and may be
+regime-specific. The 5-day traded-horizon evidence is positive mainly in
+2022--2026: $\Delta$IC is $0.0168$, but CI $[-0.0045,0.0380]$ crosses zero and
+$p(\Delta\le0)=0.062$.
 
 Momentum's benchmark status is anchored first on signal evidence rather than
 portfolio Sharpe. The 1-day discovery IC is positive under block bootstrap and
@@ -249,10 +255,13 @@ date-wise percentile-rank target, \texttt{target\_rank\_fwd\_}h\texttt{d}, so
 short-horizon experiments can use volatility-normalized, ranked, or winsorized
 labels when raw returns are too noisy. The implemented horizon grid covers
 $h\in\{1,5,10,20,30,40,50,60,70,80,90\}$. The original broad search emphasized
-5d/10d, but the final Route~B rerun uses the 30d sector-relative horizon because
-the shorter horizons did not deliver reliable net economics after costs. This
-is a selection step, not an exogenous design fact, and is one reason the final
-overlay must pay the full multiple-testing charge.
+5d/10d, but the final Route~B rerun features the 30d sector-relative horizon
+because that is where residual structure and turnover looked most plausible.
+This is a selection step, not an exogenous design fact, and is one reason the
+final overlay must pay the full multiple-testing charge. The endorsed benchmark
+and the featured residual overlay therefore live at different horizons; until a
+paired 5d overlay audit is available, they should not be presented as one
+assembled book.
 
 \textbf{Execution timing.} The raw target columns are generated on each feature
 date, but the model is evaluated with a one-day implementation lag. A feature row
@@ -528,8 +537,9 @@ shows economically sensible bands: short reversal signals are negative at
 Amihud illiquidity is the discovery-period champion across 20--60 days, but the
 2022+ confirmation step is much harsher (Table~\ref{tab:frequency_confirm}).
 At its native 1-day confirmation horizon, momentum is the only signal with a
-positive and significant hold-out $t$-stat; its hold-out strength is supportive
-but must be read against the weak pre-2022 traded-horizon check below.
+positive and significant hold-out $t$-stat; more importantly, its 1-day IC is
+positive in both the discovery and confirmation windows. That supports signal
+existence, but must be read against the weak pre-2022 traded-horizon check below.
 Amihud's in-sample
 strength collapses from $t=5.51$ to $t=0.41$, volume shock flips sign, and
 reversal keeps the expected sign but is weak. A follow-up traded-horizon
@@ -541,8 +551,11 @@ warning that 1-day IC confirms signal existence, while tradability is
 horizon-, cost-, and regime-limited even before adding ML. Since 5d is also the
 best-$t$ cell among the four archived sector-relative traded horizons, a rough
 four-horizon Bonferroni haircut moves $p=0.0087$ to $p\approx0.035$:
-supportive, but not high-conviction. The 1d split is stronger: post-2022 IC is
-higher by $0.0141$ (21-day block CI $[0.0034,0.0246]$, $p(\Delta\le0)=0.0049$).
+supportive, but not high-conviction. The 1d split is stronger, but it is better
+read as cross-regime confirmation plus recent strengthening: discovery IC is
+positive ($t=2.42$, CI $[0.0013,0.0119]$), hold-out IC is positive (plain
+$t=3.54$, NW-21 $t=4.39$, CI $[0.0115,0.0297]$), and post-2022 IC is higher by
+$0.0141$ (21-day block CI $[0.0034,0.0246]$, $p(\Delta\le0)=0.0049$).
 The direct 5d split is weaker: $\Delta$IC is $0.0168$, CI
 $[-0.0045,0.0380]$, and $p(\Delta\le0)=0.062$, short of clean evidence that the
 recent hold-out is a durable better trading regime. The daily Newey--West
@@ -564,7 +577,7 @@ Bartlett long-run variance estimate tightens rather than widens.
     Signal & Native $h$ & Disc.\ ICIR & Disc.\ $t$ & Test $t$ & Hold-out read-through \\
     \midrule
     \texttt{mom\_252d\_skip\_21d} & 1d & 0.595 & 2.23 & 3.54 &
-    Positive OOS; hold-out is significantly stronger than discovery. \\
+    Positive in both windows; recent strength may be regime-driven. \\
     \texttt{amihud\_20d} & 40d & 1.467 & 5.51 & 0.41 &
     In-sample champion, OOS decay. \\
     \texttt{ret\_5d} reversal & 1d & -1.027 & -3.84 & -0.94 &
@@ -626,7 +639,8 @@ beat the overlay's Sharpe point estimate, but it fails the paper's
 broad-grid walk-forward validation-selection rule (mean validation RankICIR
 $0.0804$ versus the selected MLP's $0.4882$ on that selection scale), sits below the 884-row
 expected-max null Sharpe of $1.512$, and was not part of the archived Route~B
-DSR/PBO audit. I therefore do not use it to
+DSR/PBO audit. The diagnostic $\lambda=0.3$ overlay is similarly unselected and
+unaudited. I therefore do not use either row to
 claim deflated alpha or to tune the final story after seeing the hold-out. The
 overlay is kept only for its economic sleeve role and lower turnover, not for
 raw performance dominance.
@@ -708,12 +722,12 @@ independent confirmation.
     Test Sharpe before deflation & 0.987 & Better than 30d momentum's 0.740, before selection correction. \\
     Paired overlay $-$ momentum test & $t=0.25$; corr 0.93 & Return increment is not statistically distinguishable; improvement is risk dampening. \\
     Bootstrap Sharpe 95\% CI & [0.019, 1.796] & Positive but wide. \\
-    DSR, same-target trials & 0.814 & Best-case same-target framing is still below a 0.95 pass threshold. \\
-    DSR, full grid trials & 0.003 & Conservative bound; fails 0.95; 0.987 Sharpe is below the 884-row null of 1.512. \\
+    DSR, same-target trials & 0.814 & Fails the 0.95 threshold even under the narrow same-target framing. \\
+    DSR, full grid trials & 0.003 & Conservative bound; also fails 0.95; 0.987 Sharpe is below the 884-row null of 1.512. \\
     CSCV PBO & 50.0\% & High but low-precision overfit risk across 28 strategies and 20 splits. \\
     Fama--MacBeth signal $t$-stat & 0.05 & No convincing independent residual-alpha coefficient. \\
     Factor-neutral Sharpe, return, FM $t$ & 1.006; 8.27\%$\rightarrow$5.17\%; 0.05 & Sharpe is mechanically similar because the residualized book remains momentum-like; FM $t$ is the decisive orthogonality test. \\
-    Capacity Sharpe at \$100M / \$1B & 0.948 / 0.864 & \$100M is plausible; \$1B is extrapolated beyond the 1\% ADV impact calibration. \\
+    Capacity Sharpe at \$100M / \$500M / \$1B & 0.948 / 0.900 / 0.864 & \$100M is plausible; \$500M/\$1B are infeasible extrapolations beyond the 10\%-ADV ceiling (p95 ADV 12.6\%/25.3\%). \\
     PIT inclusion sensitivity & Mom. 5d 0.620$\rightarrow$0.461, CI $[-0.49,1.43]$; 20d 0.828$\rightarrow$0.513; 30d 0.741$\rightarrow$0.446 & Partial inclusion-side check weakens the endorsed benchmark; overlay 30d is 0.987$\rightarrow$0.725 and remains exploratory. \\
     Survivorship stress-haircut Sharpe & 0.837 & Sensitivity does not destroy the result, but remains uncorrected. \\
     \bottomrule
@@ -825,7 +839,7 @@ passed the Route~B deflation/attribution audit.
       hold-out minus discovery CI $[0.0034,0.0246]$.
       Traded 5d IC: hold-out $t=2.41$, CI $[0.004,0.042]$; discovery $t=1.12$,
       CI $[-0.0045,0.0169]$; split-difference CI crosses zero. &
-      Raw momentum exists and is stronger post-2022; traded-horizon significance is concentrated in the recent hold-out and may be regime luck. \\
+      Raw momentum exists in both windows and is stronger post-2022; traded-horizon significance is concentrated in the recent hold-out and may be regime luck. \\
     Portfolio & Net Sharpe $0.62$--$0.63$, mean-return $t=1.31$,
       Sharpe CI $[-0.32,1.63]$, turnover $0.22$/rebalance, about 1115\% annualized. &
       Corroborating economics, not statistically tight standalone Sharpe; 5d is trading-intensive. \\
@@ -939,12 +953,14 @@ crosses zero even after the optimistic inclusion-side-only filter, so portfolio
 Sharpe is a directional result; the cleaner evidence for keeping the book is
 the 5d traded-horizon IC interval. The PIT-filtered 20d and 30d momentum Sharpe
 intervals are also wide at $[-0.45,1.58]$ and $[-0.52,1.50]$. Applying the same
-30d filter post-training to the selected Route~B prediction
-file and rebuilding the overlay score reduces Sharpe from 0.987 to 0.725,
-annual net return from 8.27\% to 5.69\%, and worsens max drawdown from -7.3\%
-to -10.0\% (\texttt{report/artifacts/pit\_inclusion\_sensitivity/};
-\texttt{\_5d/}; \texttt{\_20d/}). This is an important hit to the point
-estimates, not a new validation pass. The audit also adds a delisting-side
+filter post-training to the selected Route~B prediction files and rebuilding
+the overlay score reduces the featured 30d Sharpe from 0.987 to 0.725, annual
+net return from 8.27\% to 5.69\%, and max drawdown from -7.3\% to -10.0\%. The
+horizon-matched 5d post-training sensitivity is also inconclusive: Sharpe is
+0.645 on current membership and 0.518 after the PIT inclusion filter, with a
+filtered CI of $[-0.40,1.51]$ (\texttt{report/artifacts/pit\_inclusion\_sensitivity/};
+\texttt{\_5d/}; \texttt{\_20d/}). These are important hits to the point
+estimates, not new validation passes. The audit also adds a delisting-side
 parametric sensitivity: applying annual delisting rate $\times$ average
 delisting loss to half the book leaves the Route~B overlay Sharpe at 0.951 in a
 base case (2\% annual delisting rate, $-30\%$ average delisting return) and
@@ -970,11 +986,12 @@ decisive: the trained residual models churn $\sim$75--85\% per rebalance, while
 the Route~B overlay turns over 49.2\% versus 40.1\% for the 30-day momentum
 benchmark. A simple square-root impact stress test, calibrated to 10~bps at
 1\% ADV participation, gives overlay Sharpe 0.948 at \$100M AUM, 0.900 at
-\$500M, and 0.864 at \$1B, with 95th percentile participation rising to 25.3\%
-at \$1B. The stress holds turnover fixed, so it is not a feasible execution
-policy once participation is high; linear scaling of p95 participation puts a
-10\%-ADV ceiling near \$395M. The \$500M/\$1B rows are extrapolated beyond the
-calibrated impact range, not capacity clearance; a real mandate needs
+\$500M, and 0.864 at \$1B, with 95th percentile participation rising to 12.6\%
+at \$500M and 25.3\% at \$1B. The stress holds turnover fixed, so it is not a
+feasible execution policy once participation is high; linear scaling of p95
+participation puts a 10\%-ADV ceiling near \$395M. The \$500M/\$1B rows are
+infeasible extrapolations beyond the calibrated impact range, not capacity
+clearance; a real mandate needs
 participation caps and broker-calibrated execution. Stock borrow is not in the main evaluator, so the
 headline net figures should be read as gross-of-borrow upper bounds. A reproducible sensitivity
 (\texttt{report/artifacts/borrow\_sensitivity/}) deducts 25/50/100~bps annual
@@ -1032,8 +1049,8 @@ discipline is methodological: non-overlapping evaluation, walk-forward
 selection, explicit leakage controls, and a single-factor baseline that every
 model must clear. The realistic conclusion is sobering: broad multivariate,
 graph, MLP, and residual-overlay searches have not demonstrated production-grade
-alpha. Momentum is the only raw factor with both a defensible 1-day discovery
-IC and positive 2022--2026 confirmation, and the 5-day sector-neutral
+alpha. Momentum is the only raw factor with positive 1-day IC in both discovery
+and 2022--2026 confirmation, and the 5-day sector-neutral
 implementation is the benchmark I would keep because it has the cleanest
 traded-horizon IC evidence, not because it is cheap to trade. The 5-day
 hold-out IC is positive (block-bootstrap $t=2.41$), but it is regime-contingent rather than a
@@ -1051,8 +1068,8 @@ benchmark and unfunded small-capacity paper sleeve, size any eventual exposure
 off IC stability, cost, and capacity rather than headline Sharpe, and require a
 true point-in-time universe with delisting returns before funding it. Route~B is a
 30-day risk sleeve, not an improvement claim on that 5-day benchmark; it earns
-a next-round budget only if it passes CPCV-style stability, a 5-day
-horizon-matched overlay check, and a stronger style-neutral return test. Its 2022--2026 point estimate improves the 30-day
+a next-round budget only if it passes CPCV-style stability, a paired 5-day
+horizon-matched overlay/DSR check, and a stronger style-neutral return test. Its 2022--2026 point estimate improves the 30-day
 momentum book's Sharpe from $0.740$ to $0.987$ and drawdown from $-13.8\%$ to
 $-7.3\%$, but the paired increment is not statistically distinguishable
 ($t=0.25$), correlation with momentum is 93\%, canonical Rank IC is $0.0279$
