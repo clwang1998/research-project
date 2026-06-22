@@ -1,0 +1,2 @@
+comparison,n_discovery,n_test,mean_ic_discovery,mean_ic_test,mean_ic_diff,block_length,bootstrap_samples,diff_ci_2p5,diff_ci_97p5,diff_boot_se,diff_boot_t,p_diff_le_zero
+test_minus_discovery,3526,1115,0.006579201662870419,0.02063446723409928,0.014055265571228864,21,20000,0.0034410617113973508,0.02456960183637125,0.005411272356627411,2.5974049437771867,0.0049

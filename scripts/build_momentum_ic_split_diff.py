@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bootstrap the 5-day momentum IC difference between discovery and hold-out.
+"""Bootstrap the momentum IC difference between discovery and hold-out.
 
 This is a lightweight paper diagnostic that consumes the archived daily IC file
 from ``build_momentum_ic_robustness.py`` and tests whether the post-2022
@@ -34,6 +34,7 @@ def parse_args() -> argparse.Namespace:
         "--out-dir",
         default="report/artifacts/momentum_ic_traded_horizons_5d_split",
     )
+    p.add_argument("--out-file", default="momentum_5d_ic_split_diff.csv")
     return p.parse_args()
 
 
@@ -99,7 +100,7 @@ def main() -> None:
     )
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / "momentum_5d_ic_split_diff.csv"
+    out_path = out_dir / args.out_file
     summary.to_csv(out_path, index=False)
     print(summary.to_string(index=False))
     print(f"\nWrote: {out_path}")
