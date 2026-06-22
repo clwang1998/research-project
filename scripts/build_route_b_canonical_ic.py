@@ -40,6 +40,10 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def lambda_label(value: float) -> str:
+    return f"{value:g}".replace("-", "m").replace(".", "p")
+
+
 def main() -> None:
     args = parse_args()
     pred = pd.read_parquet(args.prediction_path)
@@ -50,7 +54,7 @@ def main() -> None:
     score_cols = [
         ("baseline_score", "momentum_baseline"),
         ("model_score", "residual_model"),
-        ("residual_overlay_score", "route_b_overlay_lambda_0p2"),
+        ("residual_overlay_score", f"route_b_overlay_lambda_{lambda_label(args.overlay_lambda)}"),
     ]
     target_cols = [
         (rmp.RAW_EVAL_TARGET_COL, "canonical_raw_label"),

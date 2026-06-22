@@ -54,9 +54,10 @@ positive (plain $t=3.54$, NW-21 $t=4.39$, CI $[0.0115,0.0297]$). Its 5-day
 portfolio economics are much weaker: hold-out Sharpe is positive but imprecise
 (about $0.62$--$0.63$, CI crossing zero), and the partial point-in-time
 inclusion check cuts it to $0.461$. The best ML result is not independent alpha:
-the 30-day Route~B residual overlay reduces drawdown but has paired
-return-increment $t=0.25$, 93\% momentum correlation, \$100M capacity Sharpe
-$0.948$, full-grid DSR $0.003$, and PBO 50\%. The next dollar should buy
+the horizon-matched 5-day Route~B residual overlay has lower drawdown but no
+return increment (paired $t=-0.27$), 78\% momentum correlation, and DSR near
+zero under both same-target and full-grid trial counts. The 30-day overlay is a
+sensitivity sleeve, not alpha evidence. The next dollar should buy
 point-in-time constituents with delisting returns and lower-turnover execution
 tests, not a larger model zoo.
 
@@ -255,13 +256,11 @@ date-wise percentile-rank target, \texttt{target\_rank\_fwd\_}h\texttt{d}, so
 short-horizon experiments can use volatility-normalized, ranked, or winsorized
 labels when raw returns are too noisy. The implemented horizon grid covers
 $h\in\{1,5,10,20,30,40,50,60,70,80,90\}$. The original broad search emphasized
-5d/10d, but the final Route~B rerun features the 30d sector-relative horizon
-because that is where residual structure and turnover looked most plausible.
-This is a selection step, not an exogenous design fact, and is one reason the
-final overlay must pay the full multiple-testing charge. The endorsed benchmark
-and the featured residual overlay therefore live at different horizons; until a
-paired 5d overlay audit is available, they should not be presented as one
-assembled book.
+5d/10d. Route~B is audited first at the endorsed 5d benchmark horizon and then
+shown at 30d only as a sensitivity sleeve, because the longer horizon looked
+more plausible on residual structure and turnover. That 30d choice is a
+selection step, not an exogenous design fact, so both overlays pay the
+multiple-testing and paired-increment checks before they can be interpreted.
 
 \textbf{Execution timing.} The raw target columns are generated on each feature
 date, but the model is evaluated with a one-day implementation lag. A feature row
@@ -298,9 +297,10 @@ score, and the final overlay signal is
 where $\widehat{\varepsilon}_{i,t}$ is the model component orthogonal to
 momentum within that day's cross-section. The overlay weight is selected from a
 small pre-registered grid on validation net portfolio metrics, with
-$\lambda{=}0$ reproducing the momentum baseline. The final Route~B run selects
-$\lambda{=}0.2$ on validation Sharpe; the test split is not used to tune the
-amount of residual ML alpha.
+$\lambda{=}0$ reproducing the momentum baseline. The final horizon-matched
+5-day Route~B audit selects $\lambda{=}1.0$ on validation Sharpe; the 30-day
+sensitivity sleeve selects $\lambda{=}0.2$. The test split is not used to tune
+the amount of residual ML alpha.
 
 \textbf{Route B residual-target training.} After the broad model/graph search
 failed to produce a robust replacement for momentum, I reran the main experiment
@@ -505,7 +505,7 @@ the rows pool heterogeneous horizons and target families.
 the small MLP is the strongest model at the 1-, 5-, and 30-day horizons (e.g.\
 sector-relative 5d ICIR $1.15$, market-relative $0.99$) and LightGBM at 20 days
 (market-relative $0.99$); Ridge and XGBoost trail
-(Fig.~\ref{fig:models}). No single model dominates every horizon and the boosted
+(Fig.~\ref{fig:horizon}). No single model dominates every horizon and the boosted
 trees do \emph{not} uniformly win --- the MLP is genuinely competitive on the
 in-sample IC metric, so we do not pretend trees are categorically better.
 
@@ -604,85 +604,69 @@ Bartlett long-run variance estimate tightens rather than widens.
   \end{minipage}
 \end{figure}
 
-\textbf{Route B 30-day residual overlay.} The secondary residual-sleeve lead comes from
-the narrower residual-target rerun, not from the graph/MLP zoo. XGBoost is
-trained on 30-day sector-relative labels after daily ridge residualization
-against sector and OHLCV style proxies. The tradable score is then
-$z(\text{momentum})+0.2z(\text{residual XGBoost})$, with $\lambda=0.2$ selected
-on validation Sharpe. Table~\ref{tab:route_b_30d} compares this Route~B overlay
-with standalone momentum and the strongest plain 30d sector model on the
-2022--2026 hold-out. This residual-label XGBoost rerun is separate from the
-broad-grid 30d sector MLP row in Table~\ref{tab:results}. It is a deliberately
-separate 30-day sleeve diagnostic, not an overlay on the endorsed 5-day
-benchmark. The longer horizon is where residual structure and turnover looked
-most plausible; a 5-day Route~B overlay remains untested. The overlay improves the
-point-estimate economic profile
-relative to momentum (Sharpe $0.74 \rightarrow 0.99$, max drawdown
-$-13.8\% \rightarrow -7.3\%$), but a paired increment test shows that this is
-mostly volatility and drawdown dampening rather than new return: mean
-per-period return improves by only $0.06\%$ (about $0.5\%$ annualized), the
-paired return-difference $t$-stat is 0.25, the overlay--momentum correlation is
-0.93, and a paired bootstrap Sharpe-gap CI is $[-0.17,0.63]$. The evidence is
-therefore deliberately read conservatively: the sample has only $N=35$
-non-overlapping periods, the absolute bootstrap Sharpe CI is $[0.019,1.796]$,
-the overlay fails a 0.95 DSR threshold under both the same-target framing
-($0.814$) and full-grid framing ($0.003$ after 884 archived searched
-model/target/horizon/configuration trials), PBO is 50\%, and the Rank
-IC change is within evaluator noise. The standalone momentum baseline is also
-thin-sample as a 30-day portfolio: Sharpe $0.740$ has mean-return $t=1.51$ and
-an i.i.d. bootstrap Sharpe interval of $[-0.22,1.85]$ over the same 35 periods.
-The robustness verdict is one-sided: Route~B is a drawdown/risk sleeve worth
-one more targeted audit, not deflated alpha and not a replacement for 5-day
-momentum.
-The plain 30d LightGBM row shows why horizon framing matters: a raw model can
-beat the overlay's Sharpe point estimate, but it fails the paper's
-broad-grid walk-forward validation-selection rule (mean validation RankICIR
-$0.0804$ versus the selected MLP's $0.4882$ on that selection scale), sits below the 884-row
-expected-max null Sharpe of $1.512$, and was not part of the archived Route~B
-DSR/PBO audit. The diagnostic $\lambda=0.3$ overlay is similarly unselected and
-unaudited. I therefore do not use either row to
-claim deflated alpha or to tune the final story after seeing the hold-out. The
-overlay is kept only for its economic sleeve role and lower turnover, not for
-raw performance dominance.
+\textbf{Route B residual overlay.} The reviewer-critical horizon-matched audit is
+now run. XGBoost is trained on 5-day sector-relative residual labels after daily
+ridge residualization against sector and OHLCV style proxies. The tradable score
+is $z(\text{momentum})+\lambda z(\text{residual XGBoost})$, with $\lambda$
+selected on 2019--2021 validation Sharpe over a fixed grid
+$\{0,0.1,0.2,0.3,0.5,0.7,1.0\}$. Validation chooses $\lambda=1.0$, but the
+2022--2026 hold-out does not establish residual alpha. The overlay raises the
+5-day Sharpe point estimate from $0.627$ to $0.713$ and reduces max drawdown
+from $-14.6\%$ to $-11.8\%$, while annual return falls from $5.9\%$ to $5.2\%$,
+turnover more than doubles from $0.22$ to $0.48$ per rebalance, the paired
+return-difference $t$-stat is $-0.27$, and the paired Sharpe-gap bootstrap CI is
+$[-0.55,0.77]$. Same-target and full-grid DSR are effectively zero because the
+selected Sharpe remains below the expected null maximum from the archived Route~B
+search. The horizon-shopping objection is therefore resolved, but the answer is
+negative: at the endorsed horizon, Route~B is a noisy drawdown/risk-timing
+candidate, not a return-increment claim.
+
+The older 30-day Route~B overlay remains useful only as a sensitivity sleeve.
+There, $\lambda=0.2$ was selected on validation Sharpe and the point-estimate
+economic profile improves relative to 30-day momentum (Sharpe
+$0.740\rightarrow0.987$, max drawdown $-13.8\%\rightarrow-7.3\%$), but the
+sample has only $N=35$ non-overlapping periods, the paired return-difference
+$t$-stat is $0.25$, overlay--momentum correlation is $0.93$, paired Sharpe-gap
+CI is $[-0.17,0.63]$, same-target DSR is $0.814$, full-grid DSR is $0.003$, and
+PBO is 50\%. The plain 30d LightGBM and diagnostic $\lambda=0.3$ rows are kept
+only to show horizon sensitivity; they were not the selected, deflated result.
 \texttt{report/artifacts/route\_b\_cost\_breakeven/} recomputes both 30-day
-books from the same return/turnover streams at alternative per-side costs: the
-overlay Sharpe gap remains $0.246$ at 5~bps, $0.212$ at 25~bps, and $0.169$ at
-50~bps, with a Sharpe break-even near 147~bps per side. This means ordinary
-commission/slippage variation is not the main Route~B objection; the blocker is
-still the weak paired return increment and high momentum correlation.
+books from the same return/turnover streams at alternative per-side costs, but
+cost robustness does not solve the weak paired increment.
 
 \begin{table}[H]
   \centering
-  \caption{30-day sector-relative hold-out comparison, net of 5~bps/side cost
-  and gross of stock-borrow. Route~B has only $N=35$ non-overlapping periods:
-  momentum Sharpe CI $[-0.22,1.85]$, overlay CI $[0.019,1.796]$, same-target
-  DSR $0.814$, full-grid DSR $0.003$, and CSCV PBO 50\%. Diagnostic rows are
-  transparency checks, not selected results; paired returns are archived in
-  \texttt{report/artifacts/route\_b\_paired\_increment/}.}\label{tab:route_b_30d}
+  \caption{Route B residual-overlay audits, net of 5~bps/side cost and gross of
+  stock-borrow. The 5d row is the horizon-matched test
+  (\texttt{report/artifacts/route\_b\_5d\_overlay\_audit/}); 30d rows are
+  sensitivity diagnostics with only $N=35$ non-overlapping periods.}\label{tab:route_b_30d}
   \scriptsize
   \setlength{\tabcolsep}{3pt}
   \begin{tabular}{lccccccc}
     \toprule
     Config & Source & Rank IC & ICIR & Net Sharpe & Ann.\ Ret & Max DD & Turnover \\
     \midrule
-    Momentum baseline & canonical baseline & 0.0282 & 0.698 & 0.740 & 7.78\% & -13.83\% & \textbf{0.401} \\
-    Plain LightGBM model & \emph{diagnostic only; val-rejected/unaudited} & 0.0362 & 0.802 & 1.226 & 12.95\% & -8.16\% & 0.631 \\
-    Route B overlay, $\lambda=0.2$ & val-selected sleeve & 0.0279 & 0.759 & 0.987 & 8.27\% & \textbf{-7.32\%} & 0.494 \\
-    Paired increment & overlay $-$ momentum & -- & -- & $\Delta$0.246 & $\Delta$0.50\% & +6.51pp & $\Delta$0.093 \\
-    Route B overlay, $\lambda=0.3$ & \emph{diagnostic only; not selected} & 0.0280 & 0.806 & 1.201 & 9.98\% & -6.10\% & 0.521 \\
+    5d momentum baseline & endorsed benchmark & -0.0006 & 0.073 & 0.627 & 5.92\% & -14.60\% & \textbf{0.221} \\
+    5d Route B, $\lambda=1.0$ & val-selected horizon match & 0.0191 & 1.026 & 0.713 & 5.15\% & \textbf{-11.79\%} & 0.481 \\
+    5d paired increment & overlay $-$ momentum & -- & -- & $\Delta$0.086 & $\Delta$-0.77\% & +2.80pp & $\Delta$0.259 \\
+    \midrule
+    30d momentum baseline & sensitivity baseline & 0.0282 & 0.698 & 0.740 & 7.78\% & -13.83\% & \textbf{0.401} \\
+    30d Route B, $\lambda=0.2$ & val-selected sensitivity & 0.0279 & 0.759 & 0.987 & 8.27\% & \textbf{-7.32\%} & 0.494 \\
+    30d LightGBM / $\lambda=0.3$ & \emph{diagnostic only} & 0.036/0.028 & 0.80/0.81 & 1.23/1.20 & 13.0/10.0\% & -8.2/-6.1\% & 0.63/0.52 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-\textbf{Route B artifact check.} Local artifacts reproduce the canonical 30d
-momentum row exactly and recompute the selected overlay on the same raw label:
-canonical Rank IC is $0.0279$ versus momentum's $0.0282$, with ICIR $0.759$
-versus $0.698$. The archived paired stream is cleaner than residualized-label
-ICs for economics: volatility falls, but mean return improves by only 0.059\%
-per period and paired $t=0.25$. A shifted inverse-vol control does not reproduce
-the drawdown result (Sharpe $0.73$, max drawdown $-14.0\%$ versus Route~B's
-$0.92$ and $-7.3\%$), so Route~B is a high-correlation risk-sleeve candidate,
-not established residual alpha.
+\textbf{Route B artifact check.} Local artifacts now reproduce both the
+horizon-matched 5d overlay audit and the older 30d sensitivity stream. At 5d,
+the raw-label Rank IC remains below momentum (0.019 versus 0.023), return
+increment is negative, and the Sharpe improvement comes from lower volatility
+and drawdown.
+At 30d, canonical Rank IC is $0.0279$ versus momentum's $0.0282$, mean return
+improves by only 0.059\% per period, and paired $t=0.25$. A shifted inverse-vol
+control does not reproduce the 30d drawdown result (Sharpe $0.73$, max drawdown
+$-14.0\%$ versus Route~B's $0.92$ and $-7.3\%$), so Route~B remains a
+high-correlation risk-sleeve candidate, not established residual alpha.
 
 \textbf{Failed ablations and negative controls.} The momentum/reversal
 sleeve-book does not justify a second sleeve: reversal is diversifying
@@ -694,18 +678,16 @@ momentum ICIR. A 24-member fixed-graph tree seed ensemble and date-aggregate
 features likewise remain below momentum, so graph features, seed bagging, and
 date aggregates are kept as falsification evidence, not alpha claims.
 
-\textbf{PM-level robustness audit.} The Route~B 30-day overlay is the best
-current residual-sleeve research lead, but it is still \emph{not} a
-production-grade alpha claim. A post-training audit treats the full search as
-multiple testing, applies
-CSCV/PBO, neutralizes the final score against available style proxies, and
-stresses capacity and survivorship. The result is mixed: hold-out economics are
-better than momentum on point estimates, but same-target DSR remains below a
-0.95 pass threshold and the full-grid DSR/PBO force an exploratory interpretation
+\textbf{PM-level robustness audit.} The Route~B answer is now deliberately
+negative at the endorsed horizon. The 5d overlay fails to add statistically
+distinguishable return, and its DSR is effectively zero under the archived trial
+counts. The 30d overlay is still the cleaner drawdown-sleeve sensitivity, but it
+is also \emph{not} a production-grade alpha claim. Its post-training audit treats
+the full search as multiple testing, applies CSCV/PBO, neutralizes the final
+score against available style proxies, and stresses capacity and survivorship
 (Table~\ref{tab:p0audit}). The capacity, survivorship-haircut, and
-factor-neutral rows are sensitivity transforms of the same selected
-$N=35$ overlay return stream; they bound fragility but do not provide
-independent confirmation.
+factor-neutral rows are transforms of the selected $N=35$ 30d return stream;
+they bound fragility but do not provide independent confirmation.
 
 \begin{table}[H]
   \centering
@@ -742,8 +724,9 @@ independent confirmation.
     target family.}\label{fig:horizon}
   \end{minipage}\hfill
   \begin{minipage}{0.49\textwidth}\centering
-    \includegraphics[width=\linewidth]{fig_model_comparison.pdf}
-    \caption{Validation mean ICIR by model at the 5-day horizon.}\label{fig:models}
+    \includegraphics[width=\linewidth]{fig_momentum_ic_decay.pdf}
+    \caption{Momentum IC decay at traded horizons. The 5d choice is a
+    power-vs-tradability compromise, not the strongest signal-existence horizon.}\label{fig:ic_decay}
   \end{minipage}
 \end{figure}
 
@@ -807,6 +790,7 @@ passed the Route~B deflation/attribution audit.
     Horizon & Config & Rank IC & ICIR (raw) & Net Sharpe & Ann.\ Ret & Turn/reb. \\
     \midrule
     5d  & Momentum baseline (sector)            & \textbf{0.023} & \textbf{1.02} (2.05) & \textbf{0.63} & \textbf{5.9\%} & \textbf{0.22} \\
+    5d  & Route B overlay, $\lambda=1.0$         & 0.019 & 1.03 (2.06) & 0.71 & 5.2\% & 0.48 \\
     5d  & MLP \emph{(val-selected, sector)}      & 0.013 & 0.73 (1.72) & 0.17 & 1.2\% & 0.59 \\
     5d  & Ridge (sector)                        & 0.010 & 0.40 (0.99) & 0.53 & 5.1\% & 0.65 \\
     5d  & LightGBM (sector)                     & 0.009 & 0.20 (1.17) & 0.24 & 1.7\% & 0.53 \\
@@ -878,26 +862,24 @@ hidden, with the Sharpe$>3$/ICIR$>5$ gate catching anything ``too good''.
 
 \textbf{Multiple testing.} The original grid is large enough that the best
 Sharpe must be treated as a selected maximum, not as a single pre-specified
-experiment. For the Route~B 30-day overlay, raw hold-out Sharpe is 0.987 and the
-bootstrap 95\% Sharpe interval is $[0.019,1.796]$. The same-target DSR is 0.814
-within the 14-trial 30d target search. As a conservative search-process bound,
-full-grid DSR falls to 0.003 because the 884 archived searches imply an
-expected-max null Sharpe of 1.512, above both the overlay Sharpe 0.987 and the
-non-selected LightGBM 30-day Sharpe 1.226. That LightGBM row is not disproved,
-but it was not validation-selected and lacks a matching DSR/PBO audit, so it is
-not deflated alpha evidence. I report the 14-trial DSR as the cleaner
-like-for-like sleeve diagnostic and the 884-trial DSR as a conservative bound;
-the latter pools heterogeneous horizons and targets, inflating the penalty
-rather than proving a formal family-wise result. CSCV PBO
-is 50\%, but only across 28 compact strategies and 20 splits, so it is an
-adverse instability flag rather than a precise probability. This is the most
-important statistical conclusion:
-the overlay is a materially better
-research lead than the old graph/MLP direction, but still not a statistically
-deflated production alpha; it fails a 0.95 DSR threshold under both the
-same-target and full-grid trial counts. The paired overlay-minus-momentum test reinforces
-that conclusion: the overlay is 93\% correlated with momentum, reduces period
-volatility, and has a return-difference $t$-stat of only 0.25. Symmetric rigor
+experiment. The new horizon-matched Route~B test is decisive: the 5d overlay's
+Sharpe is 0.713, below the expected same-target null maximum of 1.268 and the
+full-grid null of 1.512, so DSR is effectively zero under both counts. The paired
+return increment is also negative ($t=-0.27$), even though drawdown improves. For
+the older 30d sensitivity overlay, raw hold-out Sharpe is 0.987 and the bootstrap
+95\% Sharpe interval is $[0.019,1.796]$. The same-target DSR is 0.814 within the
+14-trial 30d target search, while full-grid DSR falls to 0.003 because the 884
+archived searches imply an expected-max null Sharpe of 1.512. That LightGBM row
+is not disproved, but it was not validation-selected and lacks a matching
+DSR/PBO audit, so it is not deflated alpha evidence. I report the narrower DSRs
+as like-for-like sleeve diagnostics and the 884-trial DSR as a conservative
+bound; the latter pools heterogeneous horizons and targets, inflating the penalty
+rather than proving a formal family-wise result. CSCV PBO is 50\% for the 30d
+sensitivity audit, but only across 28 compact strategies and 20 splits, so it is
+an adverse instability flag rather than a precise probability. This is the most
+important statistical conclusion: Route~B is a better research direction than
+the old graph/MLP zoo, but it is still not statistically deflated production
+alpha. Symmetric rigor
 also weakens any overconfident reading of the benchmark portfolio itself: the
 5-day momentum book is retained as a discovery-to-hold-out survivor and PM
 benchmark, not as a post-hoc familywise significant portfolio Sharpe. Its
@@ -913,14 +895,14 @@ has DSR 0.055 and a bootstrap Sharpe interval that crosses zero. It is useful as
 a falsification exercise, not as a new product claim.
 
 \textbf{Route B reproducibility.} The synchronized Route~B artifacts close the
-largest traceability gap: the 30d overlay metrics can now be traced from local
-CSV/parquet files rather than only from a remote run note. A focused local rerun
-of the 30d momentum baseline now matches the Route~B baseline row, so the
-absolute economic comparison in Table~\ref{tab:route_b_30d} is reproducible
-under one canonical evaluator. The frequency-scan and sleeve-book diagnostics
-also write lightweight CSV snapshots under \texttt{report/artifacts/}. The
-reason to keep Route~B exploratory is not provenance; it is weak independent
-attribution, wide confidence intervals, and the full-grid DSR/PBO charge.
+largest traceability gap: the 5d overlay audit and 30d sensitivity metrics can
+now be traced from local CSV/parquet files rather than only from remote run
+notes. A focused local rerun of the momentum baselines matches the Route~B
+comparison rows, so Table~\ref{tab:route_b_30d} is reproducible under one
+canonical evaluator. The frequency-scan and sleeve-book diagnostics also write
+lightweight CSV snapshots under \texttt{report/artifacts/}. The reason to keep
+Route~B exploratory is not provenance; it is weak independent attribution, wide
+confidence intervals, and the DSR/PBO charge.
 
 \textbf{Factor attribution.} The dataset lacks a full commercial risk model and
 fundamental value/quality factors, but we can still neutralize the final signal
@@ -1066,19 +1048,19 @@ recent Sharpe from being capital-allocation evidence.
 My PM decision would be to keep the 5-day momentum book as the live research
 benchmark and unfunded small-capacity paper sleeve, size any eventual exposure
 off IC stability, cost, and capacity rather than headline Sharpe, and require a
-true point-in-time universe with delisting returns before funding it. Route~B is a
-30-day risk sleeve, not an improvement claim on that 5-day benchmark; it earns
-a next-round budget only if it passes CPCV-style stability, a paired 5-day
-horizon-matched overlay/DSR check, and a stronger style-neutral return test. Its 2022--2026 point estimate improves the 30-day
-momentum book's Sharpe from $0.740$ to $0.987$ and drawdown from $-13.8\%$ to
-$-7.3\%$, but the paired increment is not statistically distinguishable
-($t=0.25$), correlation with momentum is 93\%, canonical Rank IC is $0.0279$
-versus momentum's $0.0282$, full-grid DSR is $0.003$, PBO is 50\%, and
-Fama--MacBeth $t=0.05$. A naive vol-timing control also fails to match the
-drawdown improvement, so Route~B is not dismissed as mere vol-targeting, but it
-remains exploratory. The useful output is the triage: keep 12--1 momentum as
-the core benchmark, treat residual ML as a small risk/drawdown research sleeve,
-and make DSR/PBO, PIT survivorship, capacity, and turnover part of model
-selection rather than post-hoc decoration.
+true point-in-time universe with delisting returns before funding it. Route~B
+does not change that decision. At the matched 5-day horizon it improves drawdown
+but lowers annual return, has paired return-increment $t=-0.27$, 78\% correlation
+with momentum, and DSR near zero. At 30d it improves point-estimate Sharpe
+($0.740\rightarrow0.987$) and drawdown ($-13.8\%\rightarrow-7.3\%$), but the
+paired increment is still not statistically distinguishable ($t=0.25$),
+correlation with momentum is 93\%, canonical Rank IC is $0.0279$ versus
+momentum's $0.0282$, full-grid DSR is $0.003$, PBO is 50\%, and Fama--MacBeth
+$t=0.05$. A naive vol-timing control also fails to match the 30d drawdown
+improvement, so Route~B is not dismissed as mere vol-targeting, but it remains
+exploratory. The useful output is the triage: keep 12--1 momentum as the core
+benchmark, treat residual ML as a small risk/drawdown research sleeve, and make
+DSR/PBO, PIT survivorship, capacity, and turnover part of model selection rather
+than post-hoc decoration.
 
 \end{document}

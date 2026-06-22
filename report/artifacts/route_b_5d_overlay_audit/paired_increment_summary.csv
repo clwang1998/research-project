@@ -1,0 +1,17 @@
+metric,value
+selected_lambda,1.0
+n_periods,220.0
+annualization_rebalances_per_year,50.4
+momentum_ann_return,0.05924762369817939
+overlay_ann_return,0.051537530427530794
+increment_ann_return_arithmetic,-0.007710093270648608
+momentum_sharpe,0.6267767948246012
+overlay_sharpe,0.712683147842415
+sharpe_gap_overlay_minus_momentum,0.0859063530178138
+paired_return_diff_mean_per_period,-0.00015297804108429779
+paired_return_diff_t_stat,-0.27408594607387937
+corr_overlay_momentum,0.7834379974020701
+momentum_max_drawdown,-0.14595981806210656
+overlay_max_drawdown,-0.11794227613684916
+bootstrap_sharpe_gap_ci_2p5,-0.5477899242215787
+bootstrap_sharpe_gap_ci_97p5,0.7744884580802042
