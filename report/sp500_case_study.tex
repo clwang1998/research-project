@@ -45,6 +45,16 @@ macro factors that daily OHLCV data cannot forecast, whereas the
 (momentum, reversal, liquidity, volatility, and sector-rotation effects) that is
 learnable from price and volume alone.
 
+\textbf{Answer first.} The only raw signal I would keep is 12--1 momentum, used
+as a 5-day sector-neutral research benchmark rather than a funded standalone
+alpha. Its hold-out portfolio Sharpe is positive but imprecise (about
+$0.62$--$0.63$, CI crossing zero), and the partial point-in-time inclusion check
+cuts it to $0.461$. The best ML result is not independent alpha: the 30-day
+Route~B residual overlay reduces drawdown but has paired return-increment
+$t=0.25$, 93\% correlation with momentum, full-grid DSR $0.003$, and PBO 50\%.
+The next dollar should buy point-in-time constituents with delisting returns and
+lower-turnover execution tests, not a larger model zoo.
+
 We therefore predict each stock's forward return \emph{in excess of its market
 and sector}, first test validation-selected model ensembles, and then use the
 same machinery to build a narrower momentum-plus-residual overlay. The primary
@@ -61,37 +71,19 @@ $\rightarrow$ sector- and market-relative forward-return targets $\rightarrow$ a
 single-factor momentum baseline $\rightarrow$ compact Ridge/XGBoost models
 trained on factor-neutral residual labels $\rightarrow$ a validation-selected
 momentum-plus-residual overlay $\rightarrow$ rank IC / ICIR, DSR/PBO,
-style-neutral attribution, capacity, and cost-aware portfolio backtests. The
-research decision is simple: on price/volume plus sector metadata alone, keep
-12--1 momentum as the research benchmark, specifically the 5-day
-sector-neutral implementation, but treat it as a signal benchmark rather than a
-fundable standalone product. The cleanest signal evidence is the pre-registered
-1-day discovery IC (block-bootstrap $t=2.42$, CI $[0.0013,0.0119]$) and stronger
-2022--2026 confirmation (NW-21 $t=4.39$). The 5-day tradable-horizon evidence is
-useful but regime-contingent: hold-out traded IC has $t=2.41$ with CI
-$[0.004,0.042]$, while the analogous 2008--2021 check has only $t=1.12$ and CI
-$[-0.0045,0.0169]$. Portfolio evidence is weaker: Sharpe $0.62$--$0.63$,
-mean-return $t=1.31$, CI $[-0.32,1.63]$, and turnover $0.22$/rebalance. A
-partial inclusion-side PIT filter cuts Sharpe from $0.620$ to $0.461$ with CI
-$[-0.49,1.43]$, making survivorship sensitivity the binding reason the book is
-not fundable as-is. I would size any paper exposure off IC stability and
-capacity, not recent-regime Sharpe; the kill criterion is a true PIT universe
-with delisting returns plus CPCV-style multi-regime stability. Reported net returns include
-explicit trading costs but exclude stock borrow; a simple 25/50/100~bps annual
-short-borrow haircut on 50\% short notional reduces the 5-day momentum Sharpe
-from 0.627 to 0.614/0.600/0.574. The ML/graph/residual models are not promoted
-as standalone
-alpha: the 30-day residual overlay is a horizon-specific sleeve, not evidence
-that ML improves the endorsed 5-day benchmark. Over 35 non-overlapping periods
-its paired return increment has $t=0.25$, 93\%
-correlation with momentum, a Sharpe-gap CI crossing zero, full-grid DSR
-$0.003$, and PBO 50\%. The next research dollar should therefore go to a true
-point-in-time universe with delisting returns and lower-turnover execution
-tests, not to a larger model zoo.
+style-neutral attribution, capacity, and cost-aware portfolio backtests. On
+price/volume plus sector metadata alone, the defensible conclusion is narrow:
+momentum survives as a literature-anchored benchmark and hypothesis generator,
+not as a robustly tradable multi-regime edge. The cleanest evidence is
+pre-registered 1-day IC confirmation; the 5-day traded-horizon evidence is
+positive mainly in 2022--2026. A focused split-difference bootstrap estimates
+post-2022 5-day IC minus 2008--2021 IC at $0.0168$, but the CI
+$[-0.0045,0.0380]$ crosses zero and $p(\Delta\le0)=0.062$, so recent strength
+is suggestive rather than decisive regime proof.
 
 Momentum's benchmark status is anchored first on signal evidence rather than
 portfolio Sharpe. The 1-day discovery IC is positive under block bootstrap and
-the 2022--2026 confirmation is stronger; the 5-day traded-horizon IC is
+the 2022--2026 confirmation is positive; the 5-day traded-horizon IC is
 positive only in the recent hold-out ($t=2.41$, CI $[0.004,0.042]$) and not in
 the 2008--2021 check ($t=1.12$, CI $[-0.0045,0.0169]$). This is a
 signal-existence choice, not a dominance claim: 20d has higher point Sharpe,
@@ -536,7 +528,9 @@ shows economically sensible bands: short reversal signals are negative at
 Amihud illiquidity is the discovery-period champion across 20--60 days, but the
 2022+ confirmation step is much harsher (Table~\ref{tab:frequency_confirm}).
 At its native 1-day confirmation horizon, momentum is the only signal with a
-positive, significant, and stronger hold-out $t$-stat. Amihud's in-sample
+positive and significant hold-out $t$-stat; its hold-out strength is supportive
+but must be read against the weak pre-2022 traded-horizon check below.
+Amihud's in-sample
 strength collapses from $t=5.51$ to $t=0.41$, volume shock flips sign, and
 reversal keeps the expected sign but is weak. A follow-up traded-horizon
 momentum check using \texttt{report/artifacts/momentum\_ic\_traded\_horizons/}
@@ -544,10 +538,13 @@ keeps the horizon distinction explicit: block-bootstrap $t$ is 2.41 at 5d, 2.13 
 10d, 1.89 at 20d, and 1.85 at 30d; the corresponding block-bootstrap mean-IC
 intervals are positive at 5d/10d but cross zero at 20d/30d. This is a clean
 warning that 1-day IC confirms signal existence, while tradability is
-horizon- and cost-limited even before adding ML. Since 5d is also the best-$t$
-cell among the four archived sector-relative traded horizons, a rough
-four-horizon Bonferroni haircut moves $p=0.0087$ to $p\approx0.035$: supportive,
-but not high-conviction. The daily Newey--West
+horizon-, cost-, and regime-limited even before adding ML. Since 5d is also the
+best-$t$ cell among the four archived sector-relative traded horizons, a rough
+four-horizon Bonferroni haircut moves $p=0.0087$ to $p\approx0.035$:
+supportive, but not high-conviction. A direct 5d split-difference bootstrap
+finds post-2022 IC is higher by $0.0168$, with CI $[-0.0045,0.0380]$ and
+$p(\Delta\le0)=0.062$; that is close to, but short of, clean evidence that the
+recent hold-out is a durable better regime. The daily Newey--West
 $t$-stat rising from the plain $t=3.54$ to lag-21 $t=4.39$ is not a HAC
 sign error; the daily IC series is mildly negatively autocorrelated, so the
 Bartlett long-run variance estimate tightens rather than widens.
@@ -566,7 +563,7 @@ Bartlett long-run variance estimate tightens rather than widens.
     Signal & Native $h$ & Disc.\ ICIR & Disc.\ $t$ & Test $t$ & Hold-out read-through \\
     \midrule
     \texttt{mom\_252d\_skip\_21d} & 1d & 0.595 & 2.23 & 3.54 &
-    Signal survives; stronger OOS. \\
+    Positive OOS; regime gap is suggestive, not decisive. \\
     \texttt{amihud\_20d} & 40d & 1.467 & 5.51 & 0.41 &
     In-sample champion, OOS decay. \\
     \texttt{ret\_5d} reversal & 1d & -1.027 & -3.84 & -0.94 &
@@ -722,8 +719,8 @@ production-grade alpha claim. A post-training audit treats the full search as
 multiple testing, applies
 CSCV/PBO, neutralizes the final score against available style proxies, and
 stresses capacity and survivorship. The result is mixed: hold-out economics are
-better than momentum, and the same-target DSR is encouraging, but the full-grid
-DSR and PBO still force an exploratory interpretation
+better than momentum on point estimates, but same-target DSR remains below a
+0.95 pass threshold and the full-grid DSR/PBO force an exploratory interpretation
 (Table~\ref{tab:p0audit}). The capacity, survivorship-haircut, and
 factor-neutral rows are sensitivity transforms of the same selected
 $N=35$ overlay return stream; they bound fragility but do not provide
@@ -859,8 +856,8 @@ passed the Route~B deflation/attribution audit.
     Signal existence & 1d discovery IC block-bootstrap $t=2.42$, CI
       $[0.0013,0.0119]$; 1d hold-out IC CI $[0.0115,0.0297]$; NW-21 $t=4.39$.
       Traded 5d IC: hold-out $t=2.41$, CI $[0.004,0.042]$; discovery $t=1.12$,
-      CI $[-0.0045,0.0169]$. &
-      Raw momentum exists; traded-horizon significance is concentrated in the recent hold-out. \\
+      CI $[-0.0045,0.0169]$; split-difference CI crosses zero. &
+      Raw momentum exists; traded-horizon significance is concentrated in the recent hold-out and may be regime luck. \\
     Portfolio & Net Sharpe $0.62$--$0.63$, mean-return $t=1.31$,
       Sharpe CI $[-0.32,1.63]$, turnover $0.22$/rebalance, about 1115\% annualized. &
       Corroborating economics, not statistically tight standalone Sharpe; 5d is trading-intensive. \\
@@ -1033,6 +1030,10 @@ Route~B predictions do not support a pre-2022 overlay Sharpe distribution. The
 frequency-band diagnostic makes the same point at the factor level: Amihud
 illiquidity is a strong discovery-period signal but dies in the 2022+ hold-out,
 while momentum is weak in parts of discovery and strong in the recent hold-out.
+For 5-day momentum specifically, the direct hold-out-minus-discovery IC
+bootstrap is positive but not cleanly separated from zero ($\Delta$IC $0.0168$,
+CI $[-0.0045,0.0380]$, $p(\Delta\le0)=0.062$), so the right interpretation is
+regime-contingent evidence rather than regime-proof confirmation.
 This is why single-period IC surfaces are treated as hypothesis generators, not
 proof.
 
@@ -1062,12 +1063,13 @@ selection, explicit leakage controls, and a single-factor baseline that every
 model must clear. The realistic conclusion is sobering: broad multivariate,
 graph, MLP, and residual-overlay searches have not demonstrated production-grade
 alpha. Momentum is the only raw factor with both a defensible 1-day discovery
-IC and stronger 2022--2026 confirmation, and the 5-day sector-neutral
+IC and positive 2022--2026 confirmation, and the 5-day sector-neutral
 implementation is the benchmark I would keep because it is the cleanest
 low-turnover tradable-horizon stress of that signal. The 5-day hold-out IC is
 positive (block-bootstrap $t=2.41$), but it is regime-contingent rather than a
 fully established multi-regime trading edge: the matching 2008--2021 traded-IC
-check is insignificant, and the 2008--2011 portfolio slice is negative. This is
+check is insignificant, the hold-out-minus-discovery IC bootstrap has a CI that
+crosses zero, and the 2008--2011 portfolio slice is negative. This is
 not a production-ready endorsement: Sharpe $0.62$--$0.63$, turnover $0.22$/reb.
 / about 1115\% annualized, mean return $t=1.31$, bootstrap Sharpe CI
 $[-0.32,1.63]$, PIT-filtered Sharpe $0.461$ with CI $[-0.49,1.43]$,
