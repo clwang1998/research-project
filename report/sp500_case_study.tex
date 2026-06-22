@@ -143,10 +143,9 @@ deduplicated; all 503 tickers have sector and sub-industry labels.
 \emph{current} membership applied to history, so firms that went bankrupt, were
 delisted, or were acquired (Enron, Lehman, Bear Stearns, WaMu, Sears, Kodak,
 Yahoo, Celgene, Xilinx, \dots) are absent. This is a major current-membership
-bias. Its exact magnitude is not identified without deleted-name holdings and
-delisting returns, but the expected direction for a loser-short momentum sleeve
-is optimistic because bankrupt and delisted losers are systematically absent
-from the short-side opportunity set. The metadata include \texttt{date\_added},
+bias. Its magnitude and net sign are unidentified without deleted-name holdings
+and delisting returns: inclusion-side bias inflates later entrants, while
+deleted bankrupt losers would have been profitable shorts. The metadata include \texttt{date\_added},
 which supports a partial point-in-time inclusion check: 72 current members were
 added on or after the 2022 hold-out start. We use that field as a sensitivity in
 \S\ref{sec:discussion}, but still do not claim a true survivorship correction
@@ -562,7 +561,7 @@ Bartlett long-run variance estimate tightens rather than widens.
     Signal & Native $h$ & Disc.\ ICIR & Disc.\ $t$ & Test $t$ & Hold-out read-through \\
     \midrule
     \texttt{mom\_252d\_skip\_21d} & 1d & 0.595 & 2.23 & 3.54 &
-    Only significant survivor; stronger OOS. \\
+    Signal survives; stronger OOS. \\
     \texttt{amihud\_20d} & 40d & 1.467 & 5.51 & 0.41 &
     In-sample champion, OOS decay. \\
     \texttt{ret\_5d} reversal & 1d & -1.027 & -3.84 & -0.94 &
@@ -617,7 +616,7 @@ an i.i.d. bootstrap Sharpe interval of $[-0.22,1.85]$ over the same 35 periods.
 The plain 30d LightGBM row shows why horizon framing matters: a raw model can
 beat the overlay's Sharpe point estimate, but it fails the paper's
 broad-grid walk-forward validation-selection rule (mean validation RankICIR
-$0.0804$ versus the selected MLP's $0.4882$), sits below the 884-row
+$0.0804$ versus the selected MLP's $0.4882$ on that selection scale), sits below the 884-row
 expected-max null Sharpe of $1.512$, and was not part of the archived Route~B
 DSR/PBO audit. I therefore do not use it to
 claim deflated alpha or to tune the final story after seeing the hold-out. The
@@ -718,12 +717,10 @@ independent confirmation.
 
 \begin{table}[H]
   \centering
-  \caption{P0 robustness audit for the Route B 30-day residual momentum overlay. DSR is
-  the probabilistic Sharpe ratio after deflating for the expected best result
-  across the searched configurations; PBO is CSCV probability of backtest
-  overfitting. DSR uses a pooled cross-trial Sharpe dispersion across
-  heterogeneous searched horizons/targets, a conservative approximation rather
-  than a claim that all trials are exchangeable.}\label{tab:p0audit}
+  \caption{P0 robustness audit for the Route B 30-day residual momentum overlay.
+  DSR deflates for the expected best searched result; PBO is CSCV probability of
+  backtest overfitting. The full-grid DSR is a conservative heterogeneous-search
+  approximation, not an exchangeability claim.}\label{tab:p0audit}
   \scriptsize
   \setlength{\tabcolsep}{3pt}
   \begin{tabular}{p{0.26\linewidth}p{0.25\linewidth}p{0.41\linewidth}}
@@ -734,11 +731,11 @@ independent confirmation.
     Paired overlay $-$ momentum test & $t=0.25$; corr 0.93 & Return increment is not statistically distinguishable; improvement is risk dampening. \\
     Bootstrap Sharpe 95\% CI & [0.019, 1.796] & Positive but wide. \\
     DSR, same-target trials & 0.814 & Encouraging within the 14-trial 30d target search. \\
-    DSR, full grid trials & 0.003 & 0.987 Sharpe is below the 884-row expected-max null of 1.512. \\
+    DSR, full grid trials & 0.003 & Conservative bound; 0.987 Sharpe is below the 884-row null of 1.512. \\
     CSCV PBO & 50.0\% & High but low-precision overfit risk across 28 strategies and 20 splits. \\
     Fama--MacBeth signal $t$-stat & 0.05 & No convincing independent residual-alpha coefficient. \\
     Factor-neutral Sharpe, return, FM $t$ & 1.006; 8.27\%$\rightarrow$5.17\%; 0.05 & Sharpe is mechanically similar because the residualized book remains momentum-like; FM $t$ is the decisive orthogonality test. \\
-    Capacity Sharpe at \$100M / \$1B & 0.948 / 0.864 & Capacity is plausible at modest scale; participation rises at \$1B. \\
+    Capacity Sharpe at \$100M / \$1B & 0.948 / 0.864 & \$100M is plausible; \$1B is extrapolated beyond the 1\% ADV impact calibration. \\
     PIT inclusion sensitivity & Mom. 5d 0.620$\rightarrow$0.461, CI $[-0.49,1.43]$; 20d 0.828$\rightarrow$0.513; 30d 0.741$\rightarrow$0.446 & Partial inclusion-side check weakens the endorsed benchmark; overlay 30d is 0.987$\rightarrow$0.725 and remains exploratory. \\
     Survivorship stress-haircut Sharpe & 0.837 & Sensitivity does not destroy the result, but remains uncorrected. \\
     \bottomrule
@@ -827,7 +824,7 @@ passed the Route~B deflation/attribution audit.
     \midrule
     30d & Momentum baseline (sector)            & 0.028 & 0.70 (3.04) & 0.74 & 7.8\% & 0.40 \\
     30d & MLP \emph{(broad-grid val-selected, sector)}      & 0.027 & 0.92 (3.88) & 0.69 & 6.5\% & 0.70 \\
-    \rowcolor{black!6} 30d & LightGBM (val-rejected; unaudited; below 1.512 null)  & 0.036 & 0.80 (4.34) & 1.23 & 13.0\% & 0.63 \\
+    \rowcolor{black!6} 30d & LightGBM (not a result; val-rejected; below 1.512 null)  & 0.036 & 0.80 (4.34) & 1.23 & 13.0\% & 0.63 \\
     30d & Route B overlay, $\lambda=0.2$         & 0.028 & 0.76 (3.07) & 0.99 & 8.3\% & 0.49 \\
     \bottomrule
   \end{tabular}
@@ -852,7 +849,7 @@ passed the Route~B deflation/attribution audit.
       Corroborating economics, but not statistically tight standalone Sharpe. \\
     PIT inclusion & Horizon-matched Sharpe $0.620\rightarrow0.461$;
       PIT-filtered CI $[-0.49,1.43]$. &
-      Current-membership bias is adverse; deleted names remain unresolved. \\
+      Inclusion-side bias is adverse here; deleted-name short-leg effects keep the net survivorship sign unresolved. \\
     Borrow/capacity & 25/50/100 bps borrow lowers Sharpe to
       0.614/0.600/0.574; turnover remains lowest among tested books. &
       Still a useful low-turnover benchmark, gross-of-borrow point estimates are upper bounds. \\
@@ -885,21 +882,16 @@ hidden, with the Sharpe$>3$/ICIR$>5$ gate catching anything ``too good''.
 \textbf{Multiple testing.} The original grid is large enough that the best
 Sharpe must be treated as a selected maximum, not as a single pre-specified
 experiment. For the Route~B 30-day overlay, raw hold-out Sharpe is 0.987 and the
-bootstrap 95\% Sharpe interval is $[0.019,1.796]$. The same-target DSR is 0.814,
-but full-grid DSR falls to 0.003 because the 884 archived searched
-model/target/horizon/configuration rows imply an expected-max null Sharpe of
-1.512, above both the observed overlay Sharpe 0.987 and the visually stronger
-but non-selected LightGBM 30-day Sharpe 1.226. Because that LightGBM row was not
-validation-selected and lacks a matching archived DSR/PBO audit, the fair
-claim is not that it has been disproved; it is that the paper has not
-demonstrated statistically deflated alpha from it. I use 884 as the primary
-trial family because it matches the research process that generated the
-candidates a PM could be tempted to keep: all archived model, target, horizon,
-ensemble, residual, and configuration searches, not only the final 30d sleeve.
-The narrower 14-trial same-target DSR is therefore reported as a diagnostic, not
-the headline standard. This DSR pools heterogeneous horizons and target families
-into one cross-trial null dispersion, which is a conservative penalty for the
-overlay, not a clean family-wise theorem. CSCV PBO
+bootstrap 95\% Sharpe interval is $[0.019,1.796]$. The same-target DSR is 0.814
+within the 14-trial 30d target search. As a conservative search-process bound,
+full-grid DSR falls to 0.003 because the 884 archived searches imply an
+expected-max null Sharpe of 1.512, above both the overlay Sharpe 0.987 and the
+non-selected LightGBM 30-day Sharpe 1.226. That LightGBM row is not disproved,
+but it was not validation-selected and lacks a matching DSR/PBO audit, so it is
+not deflated alpha evidence. I report the 14-trial DSR as the cleaner
+like-for-like sleeve diagnostic and the 884-trial DSR as a conservative bound;
+the latter pools heterogeneous horizons and targets, inflating the penalty
+rather than proving a formal family-wise result. CSCV PBO
 is 50\%, but only across 28 compact strategies and 20 splits, so it is an
 adverse instability flag rather than a precise probability. This is the most
 important statistical conclusion:
@@ -998,10 +990,10 @@ the Route~B overlay turns over 49.2\% versus 40.1\% for the 30-day momentum
 benchmark. A simple square-root impact stress test, calibrated to 10~bps at
 1\% ADV participation, gives overlay Sharpe 0.948 at \$100M AUM, 0.900 at
 \$500M, and 0.864 at \$1B, with 95th percentile participation rising to 25.3\%
-at \$1B. This is not an execution model, but it is enough to show that capacity and
-short-side liquidity are first-order constraints. Stock borrow is not in the
-main evaluator, so the headline net figures should be read as gross-of-borrow
-upper bounds. A reproducible sensitivity
+at \$1B. The \$500M/\$1B rows are extrapolated beyond the calibrated impact
+range, not capacity clearance; a real mandate needs participation caps and
+broker-calibrated execution. Stock borrow is not in the main evaluator, so the
+headline net figures should be read as gross-of-borrow upper bounds. A reproducible sensitivity
 (\texttt{report/artifacts/borrow\_sensitivity/}) deducts 25/50/100~bps annual
 borrow on 50\% short notional: 5d momentum Sharpe falls from 0.627 to
 0.614/0.600/0.574, 20d momentum from 0.822 to 0.809/0.796/0.769, 30d momentum
@@ -1026,9 +1018,12 @@ while momentum is weak in parts of discovery and strong in the recent hold-out.
 This is why single-period IC surfaces are treated as hypothesis generators, not
 proof.
 
-\textbf{Economic intuition.} The one signal that clearly survives out of sample
-is cross-sectional momentum --- a well-documented behavioural underreaction
-effect --- which is precisely why the single-factor baseline is so hard to beat.
+\textbf{Economic intuition.} The best-supported raw signal out of sample is
+cross-sectional momentum --- a well-documented behavioural underreaction effect
+--- which is why the single-factor baseline is hard to beat. The support is
+strongest as a signal-existence result; traded-horizon IC is positive at 5--10
+days and marginal by 20--30 days, so sizing should not lean on recent Sharpe
+alone.
 The sleeve-book diagnostic confirms that a theoretically attractive
 momentum-plus-reversal product is not enough by itself: reversal is mildly
 orthogonal, but too weak and too high-turnover to improve hold-out Sharpe. The
@@ -1042,55 +1037,35 @@ not as established residual alpha.
 \section{Limitations and Conclusion}
 % ===========================================================================
 
-This study delivers an honest, reproducible cross-sectional relative-return
-pipeline for the S\&P~500 using only price/volume and light metadata. The key
+This study delivers an honest, reproducible S\&P~500 cross-sectional
+relative-return pipeline using only price/volume and light metadata. The key
 discipline is methodological: non-overlapping evaluation, walk-forward
 selection, explicit leakage controls, and a single-factor baseline that every
-model must clear in a clearly specified metric. The realistic conclusion is
-sobering: broad multivariate, graph, MLP, and residual-overlay searches have
-not demonstrated production-grade alpha. Momentum is the only raw factor with
-both traded-horizon IC support and corroborating 1-day IC confirmation, and the
-5-day sector-neutral implementation is the benchmark I would keep because its
-traded-horizon IC interval is positive and turnover is lowest (Sharpe
-$0.62$--$0.63$, turnover $0.22$, block-bootstrap IC $t=2.41$). But this is not a
-production-ready endorsement: its own portfolio Sharpe is not statistically
-tight (mean-return $t=1.31$, bootstrap Sharpe CI $[-0.32,1.63]$), the partial
-PIT inclusion filter cuts the horizon-matched 5d Sharpe from $0.620$ to $0.461$
-with a filtered Sharpe CI of $[-0.49,1.43]$, and pre-2022 calendar slices are
-negative or weak. The recent hold-out is therefore signal evidence, not a
-multi-regime proof of fundable standalone Sharpe.
-The main evaluator is also gross of stock-borrow; a 25/50/100~bps annual
-short-borrow haircut lowers the canonical 5d Sharpe from 0.627 to
-0.614/0.600/0.574. These are not fatal haircuts, but they are enough to make
-the reported long--short Sharpe an upper-bound research statistic.
+model must clear. The realistic conclusion is sobering: broad multivariate,
+graph, MLP, and residual-overlay searches have not demonstrated production-grade
+alpha. Momentum is the only raw factor with traded-horizon IC support and
+corroborating 1-day IC confirmation, and the 5-day sector-neutral implementation
+is the benchmark I would keep because its traded-horizon IC interval is positive
+and turnover is lowest (Sharpe $0.62$--$0.63$, turnover $0.22$,
+block-bootstrap IC $t=2.41$). This is not a production-ready endorsement: mean
+return $t=1.31$, bootstrap Sharpe CI $[-0.32,1.63]$, PIT-filtered Sharpe
+$0.461$ with CI $[-0.49,1.43]$, negative or weak pre-2022 slices, gross-of-borrow
+accounting, and high-AUM capacity extrapolation all keep the recent Sharpe from
+being capital-allocation evidence.
+
 My PM decision would be to keep the 5-day momentum book as the live research
 benchmark and small-capacity paper sleeve, size any real exposure off IC
-stability and turnover rather than the headline Sharpe, and require a true
-point-in-time universe with delisting returns before treating the Sharpe as
-capital-allocation evidence. Route~B earns a next-round research budget only if
-it passes CPCV-style stability and a stronger style-neutral return test; until
-then it is a risk/drawdown diagnostic layered on momentum, not independent
-alpha.
-Its daily IC confirmation is more robust: a
-21-day block bootstrap puts the hold-out mean Rank IC CI at $[0.0115,0.0297]$
-and Newey--West lag-21 gives $t=4.39$; the traded-horizon HAC/block evidence is
-positive but only marginal by 20--30 days, where PIT inclusion also cuts
-Sharpe from $0.828$ to $0.513$ and from $0.741$ to $0.446$. Even the best
-Route~B residual sleeve remains exploratory. Its 2022--2026 point estimate
-improves the 30-day momentum book's Sharpe from $0.740$ to $0.987$ and drawdown
-from $-13.8\%$ to $-7.3\%$, but the paired return increment is not statistically
-distinguishable ($t=0.25$) and the overlay is 93\% correlated with momentum.
-With canonical Rank IC $0.0279$ versus momentum's $0.0282$, full-grid DSR
-$0.003$, PBO 50\%, and Fama--MacBeth $t=0.05$, the result is best interpreted
-as volatility/drawdown dampening rather than established residual alpha. A
-later frequency-band and two-sleeve product diagnostic strengthens the
-conservative side of the conclusion: a momentum-plus-reversal inverse-vol book
-fails DSR. I would not trade the model as a standalone alpha, and I would not
-promote it without point-in-time constituents, delisting returns, one canonical
-portfolio evaluator, stronger style-factor attribution, and lower-turnover
-execution tests. The useful output is the triage: keep 12--1 momentum as the
-core benchmark, treat residual ML as a small research sleeve, and make DSR/PBO,
-PIT survivorship, capacity, and turnover part of model selection rather than
-post-hoc decoration.
+stability and turnover rather than headline Sharpe, and require a true
+point-in-time universe with delisting returns before funding it. Route~B earns a
+next-round research budget only if it passes CPCV-style stability and a stronger
+style-neutral return test. Its 2022--2026 point estimate improves the 30-day
+momentum book's Sharpe from $0.740$ to $0.987$ and drawdown from $-13.8\%$ to
+$-7.3\%$, but the paired increment is not statistically distinguishable
+($t=0.25$), correlation with momentum is 93\%, canonical Rank IC is $0.0279$
+versus momentum's $0.0282$, full-grid DSR is $0.003$, PBO is 50\%, and
+Fama--MacBeth $t=0.05$. The useful output is the triage: keep 12--1 momentum as
+the core benchmark, treat residual ML as a small risk/drawdown research sleeve,
+and make DSR/PBO, PIT survivorship, capacity, and turnover part of model
+selection rather than post-hoc decoration.
 
 \end{document}
