@@ -81,8 +81,9 @@ explicit trading costs but exclude stock borrow; a simple 25/50/100~bps annual
 short-borrow haircut on 50\% short notional reduces the 5-day momentum Sharpe
 from 0.627 to 0.614/0.600/0.574. The ML/graph/residual models are not promoted
 as standalone
-alpha: the 30-day residual overlay lowers volatility and drawdown, but over 35
-non-overlapping periods its paired return increment has $t=0.25$, 93\%
+alpha: the 30-day residual overlay is a horizon-specific sleeve, not evidence
+that ML improves the endorsed 5-day benchmark. Over 35 non-overlapping periods
+its paired return increment has $t=0.25$, 93\%
 correlation with momentum, a Sharpe-gap CI crossing zero, full-grid DSR
 $0.003$, and PBO 50\%. The next research dollar should therefore go to a true
 point-in-time universe with delisting returns and lower-turnover execution
@@ -597,8 +598,9 @@ on validation Sharpe. Table~\ref{tab:route_b_30d} compares this Route~B overlay
 with standalone momentum and the strongest plain 30d sector model on the
 2022--2026 hold-out. This residual-label XGBoost rerun is separate from the
 broad-grid 30d sector MLP row in Table~\ref{tab:results}. It is a deliberately
-separate 30-day sleeve diagnostic, not the headline proof that momentum is
-tradable. The overlay improves the
+separate 30-day sleeve diagnostic, not an overlay on the endorsed 5-day
+benchmark. The longer horizon is where residual structure and turnover looked
+most plausible; a 5-day Route~B overlay remains untested. The overlay improves the
 point-estimate economic profile
 relative to momentum (Sharpe $0.74 \rightarrow 0.99$, max drawdown
 $-13.8\% \rightarrow -7.3\%$), but a paired increment test shows that this is
@@ -613,6 +615,9 @@ trials, PBO is 50\%, and the Rank
 IC change is within evaluator noise. The standalone momentum baseline is also
 thin-sample as a 30-day portfolio: Sharpe $0.740$ has mean-return $t=1.51$ and
 an i.i.d. bootstrap Sharpe interval of $[-0.22,1.85]$ over the same 35 periods.
+The robustness verdict is one-sided: Route~B is a drawdown/risk sleeve worth
+one more targeted audit, not deflated alpha and not a replacement for 5-day
+momentum.
 The plain 30d LightGBM row shows why horizon framing matters: a raw model can
 beat the overlay's Sharpe point estimate, but it fails the paper's
 broad-grid walk-forward validation-selection rule (mean validation RankICIR
@@ -661,6 +666,11 @@ economic comparison: across the same 35 rebalance dates, period volatility falls
 from 3.63\% to 2.89\%, but mean return improves by only 0.059\% per period and
 the paired return-difference $t$-stat is 0.25. This reframes Route~B as a
 high-correlation risk-sleeve candidate, not independent residual alpha.
+A shifted six-rebalance inverse-vol control on the same 30-day momentum returns
+does not reproduce the drawdown result: aligned Sharpe is $0.73$ with max
+drawdown $-14.0\%$, versus Route~B's $0.92$ and $-7.3\%$
+(\texttt{report/artifacts/route\_b\_vol\_timing\_control/}). This is a coarse
+return-stream negative control, not an executable capacity test.
 
 \textbf{Momentum/reversal sleeve-book diagnostic.} The next product-style
 check built the two-sleeve book implied by the frequency scan: momentum plus
@@ -676,13 +686,10 @@ rank-transformed baseline in Table~\ref{tab:results}, so the Sharpe levels are
 not apples-to-apples; the useful conclusion is that a simple multi-sleeve
 product does not beat momentum in this dataset.
 
-The full sleeve table is omitted for space; the relevant audit statistics are
-momentum-only Sharpe $0.598$, reversal-only Sharpe $-0.519$, inverse-vol
-combined Sharpe $0.094$, DSR $0.055$, and bootstrap Sharpe CI
-$[-0.724,1.095]$. An earlier 10-day residual overlay diagnostic is likewise
-demoted to prose: it improved point-estimate Sharpe from $0.746$ to $0.995$ on
-the same hold-out, but the later Route~B audit showed why such overlays must be
-reported as exploratory unless they survive deflation and attribution checks.
+The full sleeve table is omitted for space. An earlier 10-day residual overlay
+improved point-estimate Sharpe from $0.746$ to $0.995$, but the later Route~B
+audit shows why such overlays remain exploratory without deflation and
+attribution support.
 
 \textbf{Graph relation ablation.} The completed 120-candidate tree grid compares
 real relation families (sector, style-nearest-neighbor, rolling correlation, and
@@ -730,7 +737,7 @@ independent confirmation.
     Test Sharpe before deflation & 0.987 & Better than 30d momentum's 0.740, before selection correction. \\
     Paired overlay $-$ momentum test & $t=0.25$; corr 0.93 & Return increment is not statistically distinguishable; improvement is risk dampening. \\
     Bootstrap Sharpe 95\% CI & [0.019, 1.796] & Positive but wide. \\
-    DSR, same-target trials & 0.814 & Encouraging within the 14-trial 30d target search. \\
+    DSR, same-target trials & 0.814 & Best-case same-target framing is still below a 0.95 pass threshold. \\
     DSR, full grid trials & 0.003 & Conservative bound; 0.987 Sharpe is below the 884-row null of 1.512. \\
     CSCV PBO & 50.0\% & High but low-precision overfit risk across 28 strategies and 20 splits. \\
     Fama--MacBeth signal $t$-stat & 0.05 & No convincing independent residual-alpha coefficient. \\
@@ -897,7 +904,8 @@ adverse instability flag rather than a precise probability. This is the most
 important statistical conclusion:
 the overlay is a materially better
 research lead than the old graph/MLP direction, but still not a statistically
-deflated production alpha. The paired overlay-minus-momentum test reinforces
+deflated production alpha; it fails a 0.95 DSR threshold under both the
+same-target and full-grid trial counts. The paired overlay-minus-momentum test reinforces
 that conclusion: the overlay is 93\% correlated with momentum, reduces period
 volatility, and has a return-difference $t$-stat of only 0.25. Symmetric rigor
 also weakens any overconfident reading of the benchmark portfolio itself: the
@@ -971,13 +979,10 @@ direction is still adverse for a momentum book because missing bankrupt and
 delisted losers would tend to enter the prior-loser short leg. The right fix is
 point-in-time constituents and delisting returns, not a larger model.
 
-\textbf{Kronos and survivorship bias.} Kronos is not used as a reported alpha
-model in this paper. Its relevant role is only as a possible future data-universe
-route: a sequence model trained on a point-in-time universe with delisted,
-acquired, and index-deleted names could generate price-volume embeddings beyond
-the current S\&P~500 membership. I therefore treat Kronos as a candidate way to
-broaden the investable universe and reduce current-constituent survivorship
-bias, not as empirical evidence in the results above.
+\textbf{Kronos and survivorship bias.} Kronos is not reported as alpha evidence.
+Its only role here is a future route for embeddings on a point-in-time universe
+with delisted, acquired, and index-deleted names, which could reduce the current
+constituent-history survivorship problem.
 
 \textbf{Data quality.} Prices are split-adjusted; dividend adjustment is
 uncertain and treated as a minor caveat. We winsorize features and filter the
@@ -990,9 +995,11 @@ the Route~B overlay turns over 49.2\% versus 40.1\% for the 30-day momentum
 benchmark. A simple square-root impact stress test, calibrated to 10~bps at
 1\% ADV participation, gives overlay Sharpe 0.948 at \$100M AUM, 0.900 at
 \$500M, and 0.864 at \$1B, with 95th percentile participation rising to 25.3\%
-at \$1B. The \$500M/\$1B rows are extrapolated beyond the calibrated impact
-range, not capacity clearance; a real mandate needs participation caps and
-broker-calibrated execution. Stock borrow is not in the main evaluator, so the
+at \$1B. The stress holds turnover fixed, so it is not a feasible execution
+policy once participation is high; linear scaling of p95 participation puts a
+10\%-ADV ceiling near \$395M. The \$500M/\$1B rows are extrapolated beyond the
+calibrated impact range, not capacity clearance; a real mandate needs
+participation caps and broker-calibrated execution. Stock borrow is not in the main evaluator, so the
 headline net figures should be read as gross-of-borrow upper bounds. A reproducible sensitivity
 (\texttt{report/artifacts/borrow\_sensitivity/}) deducts 25/50/100~bps annual
 borrow on 50\% short notional: 5d momentum Sharpe falls from 0.627 to
@@ -1056,14 +1063,17 @@ being capital-allocation evidence.
 My PM decision would be to keep the 5-day momentum book as the live research
 benchmark and small-capacity paper sleeve, size any real exposure off IC
 stability and turnover rather than headline Sharpe, and require a true
-point-in-time universe with delisting returns before funding it. Route~B earns a
-next-round research budget only if it passes CPCV-style stability and a stronger
-style-neutral return test. Its 2022--2026 point estimate improves the 30-day
+point-in-time universe with delisting returns before funding it. Route~B is a
+30-day risk sleeve, not an improvement claim on that 5-day benchmark; it earns
+a next-round budget only if it passes CPCV-style stability, a 5-day
+horizon-matched overlay check, and a stronger style-neutral return test. Its 2022--2026 point estimate improves the 30-day
 momentum book's Sharpe from $0.740$ to $0.987$ and drawdown from $-13.8\%$ to
 $-7.3\%$, but the paired increment is not statistically distinguishable
 ($t=0.25$), correlation with momentum is 93\%, canonical Rank IC is $0.0279$
 versus momentum's $0.0282$, full-grid DSR is $0.003$, PBO is 50\%, and
-Fama--MacBeth $t=0.05$. The useful output is the triage: keep 12--1 momentum as
+Fama--MacBeth $t=0.05$. A naive vol-timing control also fails to match the
+drawdown improvement, so Route~B is not dismissed as mere vol-targeting, but it
+remains exploratory. The useful output is the triage: keep 12--1 momentum as
 the core benchmark, treat residual ML as a small risk/drawdown research sleeve,
 and make DSR/PBO, PIT survivorship, capacity, and turnover part of model
 selection rather than post-hoc decoration.

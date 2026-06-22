@@ -1,0 +1,16 @@
+{
+  "lookback_periods": 6,
+  "min_periods": 3,
+  "annualization_rebalances_per_year": 8.4,
+  "target_period_vol": 0.03625994960311708,
+  "max_leverage": 1.5,
+  "n_valid_comparison_periods": 32,
+  "mean_scale": 1.091767598743341,
+  "min_scale": 0.7641794461949267,
+  "max_scale": 1.5,
+  "corr_overlay_vol_timed": 0.9433108566689694,
+  "paired_t_overlay_minus_vol_timed": -0.6835366320719019,
+  "paired_t_vol_timed_minus_momentum": 1.1065178039811014,
+  "aligned_sharpe_gap_overlay_minus_vol_timed": 0.19237224338507208,
+  "aligned_sharpe_gap_vol_timed_minus_momentum": -0.010152043156850254
+}
