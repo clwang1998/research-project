@@ -22,7 +22,7 @@
 \setlist{nosep,leftmargin=1.4em}
 \graphicspath{{figures/}}
 
-\setlength{\parskip}{0.18em}
+\setlength{\parskip}{0.12em}
 \setlength{\parindent}{0pt}
 
 \title{\vspace{-2.5em}Predicting Cross-Sectional Relative Returns in the S\&P~500:\\
@@ -64,17 +64,17 @@ trained on factor-neutral residual labels $\rightarrow$ a validation-selected
 momentum-plus-residual overlay $\rightarrow$ rank IC / ICIR, DSR/PBO,
 style-neutral attribution, capacity, and cost-aware portfolio backtests. The
 research decision is simple: on price/volume plus sector metadata alone, keep
-low-turnover 12--1 momentum as the research benchmark, specifically the 5-day
+12--1 momentum as the research benchmark, specifically the 5-day
 sector-neutral implementation, but treat it as a signal benchmark rather than a
 fundable standalone product. Its case rests on traded-horizon IC and turnover,
-not on a tight portfolio Sharpe: block-bootstrap IC $t=2.41$ with mean-IC CI
-$[0.004,0.042]$, turnover $0.22$, net Sharpe $0.62$--$0.63$, mean-return
-$t=1.31$, and bootstrap Sharpe CI $[-0.32,1.63]$. A calendar-slice stress test
-shows that the recent hold-out is momentum-friendly rather than representative.
+not on a tight portfolio Sharpe: 2022--2026 hold-out traded IC $t=2.41$
+with CI $[0.004,0.042]$, versus discovery $t=1.12$ and CI
+$[-0.0045,0.0169]$; per-rebalance turnover $0.22$; net Sharpe
+$0.62$--$0.63$; mean-return $t=1.31$; and Sharpe CI $[-0.32,1.63]$.
 A partial inclusion-side PIT filter cuts the horizon-matched Sharpe from
 $0.620$ to $0.461$ and its own bootstrapped Sharpe CI is $[-0.49,1.43]$, so the
 portfolio Sharpe evidence is directional only. I would size any paper exposure
-off IC stability and turnover, not this recent-regime Sharpe; the kill criterion
+off IC stability and implementation capacity, not this recent-regime Sharpe; the kill criterion
 is a true point-in-time universe with delisting returns plus CPCV-style
 multi-regime stability. Reported net returns include
 explicit trading costs but exclude stock borrow; a simple 25/50/100~bps annual
@@ -91,11 +91,12 @@ tests, not to a larger model zoo.
 
 Momentum's status as the core research benchmark is anchored first on the
 traded-horizon evidence: the 5-day sector-neutral signal has positive
-block-bootstrap IC support ($t=2.41$, mean-IC CI $[0.004,0.042]$) at the
-lowest turnover among tested horizons. The conclusion is not a post-hoc claim
-that 5d was the single most significant horizon: all tested traded horizons have
-positive mean IC, and 5d is selected for the combination of positive
-block-bootstrap IC support, lower turnover, and PIT robustness. The pre-registered 1-day
+2022--2026 hold-out block-bootstrap IC support ($t=2.41$, mean-IC CI
+$[0.004,0.042]$), while the analogous 2008--2021 discovery-period traded-IC
+check is positive but not significant ($t=1.12$, CI $[-0.0045,0.0169]$).
+This is a signal-existence choice, not a dominance claim: 20d has higher point
+Sharpe, Rank IC, and lower annualized turnover, but its hold-out
+block-bootstrap IC interval brushes zero. The pre-registered 1-day
 cross-sectional IC confirmation (plain $t=3.54$; Newey--West lag-21 $t=4.39$)
 is corroborating evidence that the signal exists, not the trading statistic.
 At longer traded horizons the same signal is lower-power: a focused HAC/block
@@ -812,13 +813,14 @@ passed the Route~B deflation/attribution audit.
   0.461/0.513/0.446 with CIs $[-0.49,1.43]$, $[-0.45,1.58]$, and
   $[-0.52,1.50]$. Small PIT-vs-canonical Sharpe differences
   (0.620/0.828 vs 0.627/0.822) reflect date/universe filtering, not model
-  selection. The PM decision row is 5d momentum; other horizons are sensitivity
-  evidence, and the 30d block is too thin to rank statistically.}\label{tab:results}
+  selection. Turnover is per rebalance; annualized one-way turnover for momentum
+  is about 1115\%/449\%/337\% for 5d/20d/30d. The PM decision row is 5d
+  momentum; other horizons are sensitivity evidence.}\label{tab:results}
   \small
   \setlength{\tabcolsep}{4pt}
   \begin{tabular}{llccccc}
     \toprule
-    Horizon & Config & Rank IC & ICIR (raw) & Net Sharpe & Ann.\ Ret & Turnover \\
+    Horizon & Config & Rank IC & ICIR (raw) & Net Sharpe & Ann.\ Ret & Turn/reb. \\
     \midrule
     5d  & Momentum baseline (sector)            & \textbf{0.023} & \textbf{1.02} (2.05) & \textbf{0.63} & \textbf{5.9\%} & \textbf{0.22} \\
     5d  & MLP \emph{(val-selected, sector)}      & 0.013 & 0.73 (1.72) & 0.17 & 1.2\% & 0.59 \\
@@ -848,18 +850,19 @@ passed the Route~B deflation/attribution audit.
     \toprule
     Layer & Evidence & PM read-through \\
     \midrule
-    Signal existence & Non-traded 1d hold-out Rank IC CI $[0.0115,0.0297]$; NW-21 $t=4.39$.
-      Traded 5d block-bootstrap IC $t=2.41$, CI $[0.004,0.042]$. &
-      Best-supported evidence that the raw cross-sectional momentum signal exists; 5d is the traded benchmark. \\
+    Signal existence & 1d hold-out IC CI $[0.0115,0.0297]$; NW-21 $t=4.39$.
+      Traded 5d IC: hold-out $t=2.41$, CI $[0.004,0.042]$; discovery $t=1.12$,
+      CI $[-0.0045,0.0169]$. &
+      Raw momentum exists in the recent hold-out; discovery evidence is only directional. \\
     Portfolio & Net Sharpe $0.62$--$0.63$, mean-return $t=1.31$,
-      Sharpe CI $[-0.32,1.63]$, turnover $0.22$. &
-      Corroborating economics, but not statistically tight standalone Sharpe. \\
+      Sharpe CI $[-0.32,1.63]$, turnover $0.22$/rebalance, about 1115\% annualized. &
+      Corroborating economics, not statistically tight standalone Sharpe; 5d is trading-intensive. \\
     PIT inclusion & Horizon-matched Sharpe $0.620\rightarrow0.461$;
       PIT-filtered CI $[-0.49,1.43]$. &
       Inclusion-side bias is adverse here; deleted-name short-leg effects keep the net survivorship sign unresolved. \\
     Borrow/capacity & 25/50/100 bps borrow lowers Sharpe to
-      0.614/0.600/0.574; turnover remains lowest among tested books. &
-      Still a useful low-turnover benchmark, gross-of-borrow point estimates are upper bounds. \\
+      0.614/0.600/0.574; 5d rebalances 50.4 times per year. &
+      Useful benchmark, but gross-of-borrow point estimates are upper bounds. \\
     Regimes & 5d Sharpe by calendar slice: -0.95 (2008--11), 0.33
       (2012--16), -0.14 (2017--21), 0.62 (2022--26). &
       Recent hold-out is momentum-friendly; no multi-regime funding proof. \\
@@ -1050,11 +1053,13 @@ discipline is methodological: non-overlapping evaluation, walk-forward
 selection, explicit leakage controls, and a single-factor baseline that every
 model must clear. The realistic conclusion is sobering: broad multivariate,
 graph, MLP, and residual-overlay searches have not demonstrated production-grade
-alpha. Momentum is the only raw factor with traded-horizon IC support and
+alpha. Momentum is the only raw factor with traded-horizon hold-out IC support and
 corroborating 1-day IC confirmation, and the 5-day sector-neutral implementation
-is the benchmark I would keep because its traded-horizon IC interval is positive
-and turnover is lowest (Sharpe $0.62$--$0.63$, turnover $0.22$,
-block-bootstrap IC $t=2.41$). This is not a production-ready endorsement: mean
+is the benchmark I would keep because its 2022--2026 traded-horizon IC interval
+is positive and directly PIT-stressed, despite weaker discovery-period traded
+IC and high annualized turnover (Sharpe $0.62$--$0.63$, turnover $0.22$/reb. /
+about 1115\% annualized, block-bootstrap IC $t=2.41$). This is not
+a production-ready endorsement: mean
 return $t=1.31$, bootstrap Sharpe CI $[-0.32,1.63]$, PIT-filtered Sharpe
 $0.461$ with CI $[-0.49,1.43]$, negative or weak pre-2022 slices, gross-of-borrow
 accounting, and high-AUM capacity extrapolation all keep the recent Sharpe from
@@ -1062,7 +1067,7 @@ being capital-allocation evidence.
 
 My PM decision would be to keep the 5-day momentum book as the live research
 benchmark and small-capacity paper sleeve, size any real exposure off IC
-stability and turnover rather than headline Sharpe, and require a true
+stability, cost, and capacity rather than headline Sharpe, and require a true
 point-in-time universe with delisting returns before funding it. Route~B is a
 30-day risk sleeve, not an improvement claim on that 5-day benchmark; it earns
 a next-round budget only if it passes CPCV-style stability, a 5-day
